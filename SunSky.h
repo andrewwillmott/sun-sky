@@ -51,6 +51,8 @@ public:
     Vec2f       SkyChroma   (const Vec3f &v) const;     ///< Returns the chroma of the sky in direction v. v must be normalized.
     Vec3f       SkyRGB      (const Vec3f &v) const;     ///< Returns luminance/chroma converted to RGB
 
+    float       SkyHorizonLuminance() const;
+
     Vec3f       SunRGB() const; ///< Returns the RGB "luminance" of the sun. You must still map from Nits to an appropriate [0, 1] range. */
 
     void        SetSkyType(tSkyType skyType);

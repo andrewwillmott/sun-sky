@@ -12,6 +12,9 @@
 
 #include "SunSky.h"
 
+#include <stdint.h>
+#include <stdio.h>
+
 namespace
 {
     // XYZ -> Gamut conversion for a modern-day Dell monitor
@@ -344,6 +347,11 @@ Vec2f cSunSky::SkyChroma(const Vec3f& v) const
     default:
         return Vec2f(0, 0);
     }
+}
+
+float cSunSky::SkyHorizonLuminance() const
+{
+    return mPerezInvDen[2];
 }
 
 Vec3f cSunSky::SunRGB() const

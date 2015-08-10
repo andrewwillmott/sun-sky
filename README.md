@@ -12,7 +12,7 @@ This is an implementation of several sky models:
     
 To build and run a command-line tool exercising the code, use
 
-    c++ SunSky.cpp SunSkyTest.cpp targa.c -o sunsky && ./sunsky
+    c++ SunSky.cpp SunSkyTest.cpp -o sunsky && ./sunsky
 
 This tool is capable of producing top-down hemisphere, cube-map, and panoramic
 views. See "sunsky -h" for options. 

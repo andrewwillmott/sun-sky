@@ -67,7 +67,7 @@ Building
 
 To build this tool, use
 
-    c++ --std=c++11 -O3 SunSky.cpp SunSkyTest.cpp -o sunsky
+    c++ --std=c++11 -O3 SunSky.cpp SunSkyTool.cpp -o sunsky
 
 Or add those files to your favourite IDE.
 

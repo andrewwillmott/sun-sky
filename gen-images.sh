@@ -51,4 +51,4 @@ for type in hosekBRDF preethamBRDF; do
     done
 done
 
-mogrify -resize 128x128 images/*
+mogrify -resize 120x120 images/*

@@ -1,5 +1,5 @@
 //
-//  File:       SunSkyTest.cpp
+//  File:       SunSkyTool.cpp
 //
 //  Function:   Test tool for SunSky.*
 //

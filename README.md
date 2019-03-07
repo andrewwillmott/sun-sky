@@ -53,82 +53,6 @@ I would like to provide some sample shaders, but for now look at FillTexture*,
 and the Table::SkyRGB() routines.
 
 
-SunSky Tool
-===========
-
-Included in SunSkyTool.cpp is a tool exercising most of the sky model
-functionality. Current options are below. It can be used to generate top-down
-'hemisphere' views with or without fisheye projection, panoramic views, and
-cube maps, with various forms of tonemapping. Both LDR (png) and HDR (pfm)
-versions are output.
-
-Building
---------
-
-To build this tool, use
-
-    c++ --std=c++11 -O3 SunSky.cpp SunSkyTool.cpp -o sunsky
-
-Or add those files to your favourite IDE.
-
-Options
--------
-
-        sunsky <options>
-
-        Options:
-          -h : this help
-          -t <time>          : 0 - 24
-          -d <day of year>   : 0 - 365
-          -b <tubidity>      : 2 - 30
-          -x <ground_bounce> : 0 - 1
-          -l <latitude> <longitude>
-          -w <normalisation weight>
-          -g <gamma>
-          -e <tonemapType> : use given tonemap operator (default: linear)
-          -a : autoscale intensity
-          -i : invert hemisphere
-          -f : fisheye rather than cos projection
-          -c : output cubemap instead
-          -p : output panorama instead
-          -m : output movie, record day as sky.mp4, requires ffmpeg
-          -v : verbose
-          -s <skyType> : use given sky type
-          -r <roughness:float> : specify roughness for PreethamBRDF
-
-        skyType:
-          Preetham         (pt)
-          PreethamTable    (ptt)
-          PreethamBRDF     (ptb)
-          Hosek            (hk)
-          HosekTable       (hkt)
-          HosekBRDF        (hkb)
-          cieClear         (cc)
-          cieOvercast      (co)
-          ciePartlyCloudy  (cp)
-
-        toneMapType:
-          linear           (l)
-          exponential      (ex)
-          reinhard         (rh)
-
-Examples
---------
-
-Show noon sky for the current time of year using Preetham:
-
-        sunsky -t 12
-
-Glossy version of the same sky:
-
-        sunsky -t 12 -s preethamBRDF -r 0.3
-
-Hosek sky at 4pm with greenish albedo, high turbidity, and exponential tone
-mapping, saved to a cube map:
-
-        sunsky -t 16 -s hosek -x 0.2 0.5 0.2 -b 6 -e ex -c
-
-
 Results
 =======
 
@@ -229,4 +153,80 @@ BRDF Day/Sunset:
 ![](images/hosekBRDF-rs-5.png)
 ![](images/hosekBRDF-rs-6.png)
 ![](images/hosekBRDF-rs-7.png)
+
+
+SunSky Tool
+===========
+
+Included in SunSkyTool.cpp is a tool exercising most of the sky model
+functionality. Current options are below. It can be used to generate top-down
+'hemisphere' views with or without fisheye projection, panoramic views, and
+cube maps, with various forms of tonemapping. Both LDR (png) and HDR (pfm)
+versions are output.
+
+Building
+--------
+
+To build this tool, use
+
+    c++ --std=c++11 -O3 SunSky.cpp SunSkyTool.cpp -o sunsky
+
+Or add those files to your favourite IDE.
+
+Options
+-------
+
+        sunsky <options>
+
+        Options:
+          -h : this help
+          -t <time>          : 0 - 24
+          -d <day of year>   : 0 - 365
+          -b <tubidity>      : 2 - 30
+          -x <ground_bounce> : 0 - 1
+          -l <latitude> <longitude>
+          -w <normalisation weight>
+          -g <gamma>
+          -e <tonemapType> : use given tonemap operator (default: linear)
+          -a : autoscale intensity
+          -i : invert hemisphere
+          -f : fisheye rather than cos projection
+          -c : output cubemap instead
+          -p : output panorama instead
+          -m : output movie, record day as sky.mp4, requires ffmpeg
+          -v : verbose
+          -s <skyType> : use given sky type
+          -r <roughness:float> : specify roughness for PreethamBRDF
+
+        skyType:
+          Preetham         (pt)
+          PreethamTable    (ptt)
+          PreethamBRDF     (ptb)
+          Hosek            (hk)
+          HosekTable       (hkt)
+          HosekBRDF        (hkb)
+          cieClear         (cc)
+          cieOvercast      (co)
+          ciePartlyCloudy  (cp)
+
+        toneMapType:
+          linear           (l)
+          exponential      (ex)
+          reinhard         (rh)
+
+Examples
+--------
+
+Show noon sky for the current time of year using Preetham:
+
+        sunsky -t 12
+
+Glossy version of the same sky:
+
+        sunsky -t 12 -s preethamBRDF -r 0.3
+
+Hosek sky at 4pm with greenish albedo, high turbidity, and exponential tone
+mapping, saved to a cube map:
+
+        sunsky -t 16 -s hosek -x 0.2 0.5 0.2 -b 6 -e ex -c
 

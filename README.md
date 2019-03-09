@@ -37,7 +37,7 @@ In addition, for the Preetham and Hosek models, I have added:
 
 * An extension to allow mixing the clear sky models with an overcast sky
   via a simple linear 'overcast' factor. Generally it's best to use this
-  to simulate high cloud, while low-lying clouds are represented explictly
+  to simulate high cloud, while low-lying clouds are represented explicitly
   in the shader. However, when used for shading rather than skybox display,
   it can also represent low-lying cloud cover.
 

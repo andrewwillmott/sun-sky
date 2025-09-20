@@ -1,15 +1,15 @@
 //
-//  File:       SunSkyTool.cpp
+//  SunSkyTool.cpp
 //
-//  Function:   Test tool for SunSky.*
+//  Test tool for SunSky.*
 //
-//  Copyright:  Andrew Willmott
+//  Andrew Willmott
 //
 
 #define  _CRT_SECURE_NO_WARNINGS
 #define _USE_MATH_DEFINES
 
-#include "SunSky.h"
+#include "SunSky.hpp"
 
 #include <math.h>
 #include <time.h>
@@ -134,7 +134,7 @@ namespace
         nullptr
     };
 
-    struct cMapInfo
+    struct MapInfo
     {
         float weight    = 5e-5f;
         float gamma     = 2.2f;
@@ -177,7 +177,7 @@ namespace
 namespace
 {
     /// Fill top-down projection of upper or lower hemisphere
-    void SkyToHemisphere(const cSunSky& sunSky, int width, int height, uint8_t* data, int stride, const cMapInfo& mi)
+    void SkyToHemisphere(const SunSky& sunSky, int width, int height, uint8_t* data, int stride, const MapInfo& mi)
     {
         float invGamma = 1.0;
 
@@ -244,7 +244,7 @@ namespace
         Vec3f dev;
     };
 
-    void SkyToHemisphere(const cSunSky& sunSky, int width, int height, Vec3f* data, const cMapInfo& mi, cStats* stats)
+    void SkyToHemisphere(const SunSky& sunSky, int width, int height, Vec3f* data, const MapInfo& mi, cStats* stats)
     {
         Vec3f maxElts(vl_0);
         Vec3f sumElts(vl_0);
@@ -322,24 +322,24 @@ namespace
 {
     const int kFaceIndices[6][3] =
     {
-        0, 2, 1,
-        2, 0, 1,
-        0, 2, 1,
-        2, 0, 1,
-        0, 1, 2,
-        0, 1, 2,
+        { 0, 2, 1 },
+        { 2, 0, 1 },
+        { 0, 2, 1 },
+        { 2, 0, 1 },
+        { 0, 1, 2 },
+        { 0, 1, 2 },
     };
     const float kFaceSigns[6][3] =
     {
-        +1.0f, +1.0f, +1.0f,
-        +1.0f, -1.0f, +1.0f,
-        -1.0f, -1.0f, +1.0f,
-        -1.0f, +1.0f, +1.0f,
-        +1.0f, -1.0f, +1.0f,
-        +1.0f, +1.0f, -1.0f,
+        { +1.0f, +1.0f, +1.0f },
+        { +1.0f, -1.0f, +1.0f },
+        { -1.0f, -1.0f, +1.0f },
+        { -1.0f, +1.0f, +1.0f },
+        { +1.0f, -1.0f, +1.0f },
+        { +1.0f, +1.0f, -1.0f },
     };
 
-    void SkyToCubeFace(const cSunSky& sunSky, int face, int width, int height, uint8_t* data, int stride, const cMapInfo& mi)
+    void SkyToCubeFace(const SunSky& sunSky, int face, int width, int height, uint8_t* data, int stride, const MapInfo& mi)
     {
         float invGamma = 1.0;
 
@@ -379,7 +379,7 @@ namespace
         }
     }
 
-    void SkyToCubeFace(const cSunSky& sunSky, int face, int width, int height, Vec3f* data, const cMapInfo& mi)
+    void SkyToCubeFace(const SunSky& sunSky, int face, int width, int height, Vec3f* data, const MapInfo& mi)
     {
         const float* signs   = kFaceSigns  [face];
         const int*   indices = kFaceIndices[face];
@@ -419,7 +419,7 @@ namespace
 
 namespace
 {
-    void SkyToPanoramic(const cSunSky& sunSky, int height, uint8_t* data, int stride, const cMapInfo& mi)
+    void SkyToPanoramic(const SunSky& sunSky, int height, uint8_t* data, int stride, const MapInfo& mi)
     {
         float invGamma = 1.0;
 
@@ -465,7 +465,7 @@ namespace
         }
     }
 
-    void SkyToPanoramic(const cSunSky& sunSky, int height, Vec3f* data, const cMapInfo& mi)
+    void SkyToPanoramic(const SunSky& sunSky, int height, Vec3f* data, const MapInfo& mi)
     {
         int width = 2 * height;
         int stride = width;
@@ -512,36 +512,39 @@ namespace
 
 namespace
 {
-    struct cEnumInfo
+    struct EnumInfo
     {
         const char* mName;
         const char* mShort;
         int         mValue;
     };
 
-    cEnumInfo kSkyTypeEnum[] =
+    EnumInfo kSkyTypeEnum[] =
     {
-        "Preetham",         "pt",   kPreetham,
-        "PreethamTable",    "ptt",  kPreethamTable,
-        "PreethamBRDF",     "ptb",  kPreethamBRDF,
-        "Hosek",            "hk",   kHosek,
-        "HosekTable",       "hkt",  kHosekTable,
-        "HosekBRDF",        "hkb",  kHosekBRDF,
-        "cieClear",         "cc",   kCIEClear,
-        "cieOvercast",      "co",   kCIEOvercast,
-        "ciePartlyCloudy",  "cp",   kCIEPartlyCloudy,
-        nullptr, nullptr, 0
+        { "Preetham",         "pt",   kPreetham        },
+        { "PreethamTable",    "ptt",  kPreethamTable   },
+        { "PreethamBRDF",     "ptb",  kPreethamBRDF    },
+        { "Hosek",            "hk",   kHosek           },
+        { "HosekTable",       "hkt",  kHosekTable      },
+        { "HosekBRDF",        "hkb",  kHosekBRDF       },
+        { "HosekCubic",       "hc",   kHosekCubic      },
+        { "HosekCubicTable",  "hct",  kHosekCubicTable },
+        { "HosekCubicBRDF",   "hcb",  kHosekCubicBRDF  },
+        { "cieClear",         "cc",   kCIEClear        },
+        { "cieOvercast",      "co",   kCIEOvercast     },
+        { "ciePartlyCloudy",  "cp",   kCIEPartlyCloudy },
+        { nullptr, nullptr, 0 }
     };
 
-    cEnumInfo kToneMapTypeEnum[] =
+    EnumInfo kToneMapTypeEnum[] =
     {
-        "linear",       "l",   kToneMapLinear,
-        "exponential",  "ex",  kToneMapExponential,
-        "reinhard",     "rh",  kToneMapReinhard,
-        nullptr, nullptr, 0
+        { "linear",       "l",   kToneMapLinear      },
+        { "exponential",  "ex",  kToneMapExponential },
+        { "reinhard",     "rh",  kToneMapReinhard    },
+        { nullptr, nullptr, 0 }
     };
 
-    int ArgEnum(const cEnumInfo info[], const char* name, int defaultValue = -1)
+    int ArgEnum(const EnumInfo info[], const char* name, int defaultValue = -1)
     {
         for ( ; info->mName; info++)
             if (strcasecmp(info->mName, name) == 0 || strcasecmp(info->mShort, name) == 0)
@@ -582,11 +585,11 @@ namespace
         );
 
         printf("\n" "skyType:\n");
-        for (const cEnumInfo* info = kSkyTypeEnum; info->mName; info++)
+        for (const EnumInfo* info = kSkyTypeEnum; info->mName; info++)
             printf("  %-16s (%s)\n", info->mName, info->mShort);
 
         printf("\n" "toneMapType:\n");
-        for (const cEnumInfo* info = kToneMapTypeEnum; info->mName; info++)
+        for (const EnumInfo* info = kToneMapTypeEnum; info->mName; info++)
             printf("  %-16s (%s)\n", info->mName, info->mShort);
 
         return 0;
@@ -613,10 +616,10 @@ int main(int argc, const char* argv[])
     bool dst = (theTime->tm_isdst != 0);
     Vec2f latLong   = kLondon;
     float turbidity = 2.5;
-    Vec3f albedo    = vl_0;
+    Vec3f albedo    = Vec3f(0.3f);
     float overcast  = 0.0f;
 
-    cMapInfo mi;
+    MapInfo mi;
     mi.weight = -1.0f;
 
     float roughness = -1.0f;
@@ -800,7 +803,7 @@ int main(int argc, const char* argv[])
 
     Vec3f sunDir = SunDirection(localTime, timeZone, julianDay, latLong[0], latLong[1]);
 
-    cSunSky sunSky;
+    SunSky sunSky;
     sunSky.SetSkyType(skyType);
 
     sunSky.SetSunDir(sunDir);
@@ -833,16 +836,12 @@ int main(int argc, const char* argv[])
     }
 
     if (mi.weight < 0.0f)
-        switch (skyType)
-        {
-        case kHosek:
-        case kHosekTable:
-        case kHosekBRDF:
+    {
+        if (kHosek <= skyType && skyType <= kHosekCubicBRDF)
             mi.weight = 8e-5f;
-            break;
-        default:
+        else
             mi.weight = 5e-5f;
-        }
+    }
 
     if (!movie && autoscale)
     {
@@ -924,7 +923,7 @@ int main(int argc, const char* argv[])
 
         // crf = constant rate factor, 0 - 51, 0 is lossless, 51 worst
         // -preset = veryfast/faster/fast/medium/slow/slower/veryslow
-        const char* cmd = "/usr/local/bin/ffmpeg -r 60 -f rawvideo -pix_fmt rgba -s 256x256 -i - -threads 0 -preset medium -y -pix_fmt yuv420p -crf 10 sky.mp4";
+        const char* cmd = "ffmpeg -r 60 -f rawvideo -pix_fmt rgba -s 256x256 -i - -threads 0 -preset medium -y -pix_fmt yuv420p -crf 10 sky.mp4";
 
         // open pipe to ffmpeg's stdin in binary write mode
         FILE* ffmpeg = popen(cmd, "w");

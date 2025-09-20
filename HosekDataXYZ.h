@@ -100,6 +100,11 @@ the model.
 
 */
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-braces"
+#endif
+
 // Uses Sep 9 pattern / Aug 23 mean dataset
 
 // [albedo][turbidity][quinticCoeffs][coeffs]
@@ -3849,3 +3854,7 @@ float kHosekRadZ[2][10][6] =
 	5.936468e+001,
 	3.110255e+001,
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif

@@ -1,19 +1,18 @@
 //
-//  File:       SunSky.h
+//  SunSky.hpp
 //
-//  Function:   Implements various sky models -- Preetham, Hosek, CIE* -- as
-//              well as a separable table-based model for fast BRDF convolutions
+//  Implements various sky models -- Preetham, Hosek, CIE* -- as
+//  well as a separable table-based model for fast BRDF convolutions
 //
-//  Author:     Andrew Willmott, Preetham sun/sky based on code by Brian Smits,
-//              Hosek code used L. Hosek & A. Wilkie code Version 1.4a as reference
-//
-//  Copyright:  Andrew Willmott, see HosekDataXYZ.h for Hosek data copyright
+// Andrew Willmott but:
+//   Preetham sun/sky based on code by Brian Smits,
+//   Hosek code used L. Hosek & A. Wilkie code Version 1.4a as reference
 //
 
-#ifndef SUNSKY_H
-#define SUNSKY_H
+#ifndef SUN_SKY_H
+#define SUN_SKY_H
 
-#include "VL234f.h"
+#include "VL234f.hpp"
 
 namespace SSLib
 {
@@ -32,6 +31,9 @@ namespace SSLib
     );
     // Returns the local sun direction at the given time/location. +Y = north, +X = east, +Z = up.
 
+    Vec2f SunriseAndSunset(float timeZone, int julianDay, float latitude, float longitude);
+    // Returns sunrise and sunset times for the given day and location.
+
     // Utilities
     Vec3f SunRGB(float cosTheta, float turbidity = 3.0f);   // Returns RGB for given sun elevation
     float ZenithLuminance(float thetaS, float T);           // Returns luminance estimate for given solar altitude and turbidity
@@ -43,13 +45,13 @@ namespace SSLib
 
 
     //--------------------------------------------------------------------------
-    // cSunSkyPreetham
+    // SkyPreetham
     //--------------------------------------------------------------------------
 
-    class cSunSkyPreetham
+    class SkyPreetham
     {
     public:
-        cSunSkyPreetham();
+        SkyPreetham();
 
         void        Update(const Vec3f& sun, float turbidity, float overcast = 0.0f, float hCrush = 0.0f); // update model with given settings
 
@@ -70,13 +72,13 @@ namespace SSLib
 
 
     //--------------------------------------------------------------------------
-    // cSunSkyHosek
+    // SkyHosek
     //--------------------------------------------------------------------------
 
-    class cSunSkyHosek
+    class SkyHosek
     {
     public:
-        cSunSkyHosek();
+        SkyHosek();
 
         void        Update(const Vec3f& sun, float turbidity, Vec3f albedo = vl_0, float overcast = 0.0f); // update model with given settings
 
@@ -88,14 +90,16 @@ namespace SSLib
         Vec3f       mToSun;
         float       mCoeffsXYZ[3][9];   // Hosek 9-term distribution coefficients
         Vec3f       mRadXYZ;            // Overall average radiance
+        Vec3f       mAlbedo;            // Ground albedo
+        bool        mUseCubic = false;  // Whether to use approximated cut-down Hosek
     };
 
 
     //--------------------------------------------------------------------------
-    // cSunSkyTable
+    // SkyTable
     //--------------------------------------------------------------------------
 
-    class cSunSkyTable
+    class SkyTable
     {
     public:
         // Table-based version - faster than per-sample Perez/Hosek function evaluation, suitable for shader use via 64 x 2 texture
@@ -107,17 +111,17 @@ namespace SSLib
         // where H is trivial to evaluate in a shader, involving a constant term and sqrt(v.z).
         // Note: the F term is generally negative, so we use F' = -F in the tables.
 
-        void        FindThetaGammaTables(const cSunSkyPreetham& pt);
-        void        FindThetaGammaTables(const cSunSkyHosek& pt);
+        void        FindThetaGammaTables(const SkyPreetham& pt);
+        void        FindThetaGammaTables(const SkyHosek& pt);
 
-        Vec3f       SkyRGB(const cSunSkyPreetham& pt, const Vec3f& v) const;  // Use precalculated table to return fast sky colour on CPU
-        Vec3f       SkyRGB(const cSunSkyHosek& hk,    const Vec3f& v) const;  // Use precalculated table to return fast sky colour on CPU
+        Vec3f       SkyRGB(const SkyPreetham& pt, const Vec3f& v) const;  // Use precalculated table to return fast sky colour on CPU
+        Vec3f       SkyRGB(const SkyHosek& hk,    const Vec3f& v) const;  // Use precalculated table to return fast sky colour on CPU
 
         void        FillTexture(int width, int height, uint8_t image[][4]) const;  // Fill kTableSize x 2 BGRA8 texture with tables
         void        FillTexture(int width, int height, float   image[][4]) const;  // Fill kTableSize x 2 RGBAF32 texture with tables
 
         // Table acceleration
-        enum { kTableSize = 64 };
+        enum { kTableSize = 64, kHalfTableSize = kTableSize / 2 };
         Vec3f       mThetaTable[kTableSize];
         Vec3f       mGammaTable[kTableSize];
         float       mMaxTheta = 1.0f;       // To avoid clipping when using non-float textures. Currently only necessary if overcast is being used.
@@ -127,31 +131,31 @@ namespace SSLib
 
 
     //--------------------------------------------------------------------------
-    // cSunSkyBRDF
+    // SkyBRDF
     //--------------------------------------------------------------------------
 
     // #define COMPACT_BRDF_TABLE   // enable for smaller half-size table
 
-    class cSunSkyBRDF
+    class SkyBRDF
     {
     public:
-        // Extended version of cSunSkyTable that uses zonal harmonics to produce table rows
+        // Extended version of SkyTable that uses zonal harmonics to produce table rows
         // convolved with increasing cosine powers. This is an approximation, because
         // conv(AB) != conv(A) conv(B), but, because the Perez-form evaluation is
         // (1 + F(theta)) (1 + G(gamma)), the approximation is only for the small
         // order-2 FG term.
-        void        FindBRDFTables(const cSunSkyTable& table, const cSunSkyPreetham& pt);
-        void        FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& hk);
+        void        FindBRDFTables(const SkyTable& table, const SkyPreetham& pt);
+        void        FindBRDFTables(const SkyTable& table, const SkyHosek& hk);
 
-        Vec3f       ConvolvedSkyRGB(const cSunSkyPreetham& pt, const Vec3f& v, float roughness) const; // return sky term convolved with roughness, 1 = fully diffuse
-        Vec3f       ConvolvedSkyRGB(const cSunSkyHosek& pt,    const Vec3f& v, float roughness) const; // return sky term convolved with roughness, 1 = fully diffuse
+        Vec3f       ConvolvedSkyRGB(const SkyPreetham& pt, const Vec3f& v, float roughness) const; // return sky term convolved with roughness, 1 = fully diffuse
+        Vec3f       ConvolvedSkyRGB(const SkyHosek& pt,    const Vec3f& v, float roughness) const; // return sky term convolved with roughness, 1 = fully diffuse
 
         void        FillBRDFTexture(int width, int height, uint8_t image[][4]) const; // Fill kTableSize x (kBRDFSamples x 2|4) BGRA8 texture with tables
         void        FillBRDFTexture(int width, int height, float   image[][4]) const; // Fill kTableSize x (kBRDFSamples x 2|4) RGBAF32 texture with tables
                     // Note: for Hosek, the H term will be in the 'w' component of the theta section, and if a kBRDFSamples x 4 size texture is supplied,
                     // the two additional sections will contain the FH term table. (Using this improves accuracy but can be skipped.)
 
-        enum { kTableSize = cSunSkyTable::kTableSize };
+        enum { kTableSize = SkyTable::kTableSize, kHalfTableSize = SkyTable::kHalfTableSize };
     #ifdef COMPACT_BRDF_TABLE
         enum { kBRDFSamples = 4 };
     #else
@@ -172,7 +176,7 @@ namespace SSLib
 
 
     //--------------------------------------------------------------------------
-    // cSunSky
+    // SunSky
     // Composite sun/sky model for easy comparisons
     //--------------------------------------------------------------------------
 
@@ -184,16 +188,19 @@ namespace SSLib
         kHosek,
         kHosekTable,
         kHosekBRDF,
+        kHosekCubic,
+        kHosekCubicTable,
+        kHosekCubicBRDF,
         kCIEClear,
         kCIEOvercast,
         kCIEPartlyCloudy,
         kNumSkyTypes
     };
 
-    class cSunSky
+    class SunSky
     {
     public:
-        cSunSky();
+        SunSky();
 
         void        SetSkyType(tSkyType skyType);
         tSkyType    SkyType() const;
@@ -223,13 +230,13 @@ namespace SSLib
         float       mRoughness;
 
         // Various models
-        float           mZenithY;   // for CIE functions
+        float       mZenithY;   // for CIE functions
 
-        cSunSkyPreetham mPreetham;
-        cSunSkyHosek    mHosek;
-        cSunSkyTable    mTable;
-        cSunSkyBRDF     mBRDF;
+        SkyPreetham mPreetham;
+        SkyHosek    mHosek;
+        SkyTable    mTable;
+        SkyBRDF     mBRDF;
     };
 }
 
-#endif 
+#endif

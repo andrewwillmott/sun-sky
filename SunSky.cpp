@@ -1,29 +1,28 @@
 //
-//  File:       SunSky.cpp
+// SunSky.cpp
 //
-//  Function:   Implements SunSky.h
+// Implements SunSky.hpp
 //
-//  Author:     Andrew Willmott, Preetham sun/sky based on code by Brian Smits,
-//              Hosek code used L. Hosek & A. Wilkie code Version 1.4a as reference
-//
-//  Copyright:  Andrew Willmott, see HosekDataXYZ.h for Hosek data copyright
+// Andrew Willmott, Preetham sun/sky based on code by Brian Smits,
+// Hosek code used L. Hosek & A. Wilkie code Version 1.4a as reference
 //
 
-#include "VL234f.h"
+#include "VL234f.hpp"
 
-#include "SunSky.h"
+#include "SunSky.hpp"
 
 #include "HosekDataXYZ.h"
+#include "HosekCubic.h"
 
 #include <stdint.h>
 #include <float.h>
-#include <assert.h>
 
 using namespace SSLib;
 
 // #define SIM_CLAMP                // emulate normalised integer texture, for CPU-side checking
 // #define SUPPORT_OVERCAST_CLAMP   // support overcast functionality via tables. (Without overcast, the theta table is within 0-1 anyway.)
-// #define HOSEK_G_FIX              // experimental fix for hue ringing in rare sunset occasions with BRDF version of Hosek
+#define REMAP_THETA                 // remap cos theta to concentrate table around horizon
+#define HOSEK_G_FIX                 // fixes hue ringing during sunset/sunrise with BRDF version of Hosek, causing blue spots opposite
 // #define HOSEK_BRDF_ANALYTIC_H    // for A/B'ing H/FH tables vs. direct ZH evaluation
 // #define LOCAL_DEBUG              // dump debug/tuning info
 
@@ -98,7 +97,7 @@ namespace
             return 0.0f;
         return s;
     }
-    inline Vec3f ClampPositive(Vec3f v)
+    inline Vec3f ClampPositive3(Vec3f v)
     {
         return { ClampPositive(v.x), ClampPositive(v.y), ClampPositive(v.z) };
     }
@@ -113,7 +112,7 @@ namespace
     const float    kFToIBiasF32 = (float)(uint32_t(3) << 22);
     const int32_t  kFToIBiasS32 = 0x4B400000;
 
-    inline int32_t FloorToInt32(float s) // force int 'fast' version of this
+    inline int32_t FloorToSInt32(float s) // force int 'fast' version of this
     {
         union
         {
@@ -132,14 +131,14 @@ namespace
         return s;
     }
 
-    template<class T_V> T_V Lerp(float s, int n, const T_V c[])
+    template<class T_V> T_V LerpSample(float s, int n, const T_V c[])
     {
         s = LerpClamp(s);
-        assert(s >= 0.0f && s < 1.0f);
+        VL_ASSERT(s >= 0.0f && s < 1.0f);
 
         s *= n - 1;
 
-        int si0 = FloorToInt32(s);
+        int si0 = FloorToSInt32(s);
         int si1 = (si0 + 1);
 
         float sf = s - si0;
@@ -148,18 +147,18 @@ namespace
              + c[si1] *    sf   ;
     }
 
-    template<class T_V> T_V BiLerp(float s, float t, int w, int h, const T_V c[])
+    template<class T_V> T_V BiLerpSample(float s, float t, int w, int h, const T_V c[])
     {
         s = LerpClamp(s);
         t = LerpClamp(t);
-        assert(s >= 0.0f && t >= 0.0f);
-        assert(s  < 1.0f && t  < 1.0f);
+        VL_ASSERT(s >= 0.0f && t >= 0.0f);
+        VL_ASSERT(s  < 1.0f && t  < 1.0f);
 
         s *= w - 1;
         t *= h - 1;
 
-        int si0 = FloorToInt32(s);
-        int ti0 = FloorToInt32(t);
+        int si0 = FloorToSInt32(s);
+        int ti0 = FloorToSInt32(t);
 
         int si1 = (si0 + 1);
         int ti1 = (ti0 + 1);
@@ -178,34 +177,54 @@ namespace
 
     inline float DegreesToRadians(float d)
     {
-        return d * (vl_twoPi / 360.0f);
+        return d * (vlf_twoPi / 360.0f);
     }
 }
 
 Vec3f SSLib::SunDirection(float timeOfDay, float timeZone, int julianDay, float latitude, float longitude)
 {
     float solarTime = timeOfDay
-        +  (0.170f * sinf(4 * vl_pi * (julianDay - 80) / 373)
-          - 0.129f * sinf(2 * vl_pi * (julianDay -  8) / 355))
+        +  (0.170f * sinf(4 * vlf_pi * (julianDay - 80) / 373)
+          - 0.129f * sinf(2 * vlf_pi * (julianDay -  8) / 355))
         + (longitude / 15 - timeZone);
 
-    float solarDeclination = (0.4093f * sinf(2 * vl_pi * (julianDay - 81) / 368));
+    float solarDeclination = (0.4093f * sinf(2 * vlf_pi * (julianDay - 81) / 368));
 
     float latRads = DegreesToRadians(latitude);
 
-    float sx = cosf(solarDeclination)                 * sinf(vl_pi * solarTime / 12);
+    float sx = cosf(solarDeclination)                 * sinf(vlf_pi * solarTime / 12);
     float sy = cosf(latRads) * sinf(solarDeclination)
-             + sinf(latRads) * cosf(solarDeclination) * cosf(vl_pi * solarTime / 12);
+             + sinf(latRads) * cosf(solarDeclination) * cosf(vlf_pi * solarTime / 12);
     float sz = sinf(latRads) * sinf(solarDeclination)
-             - cosf(latRads) * cosf(solarDeclination) * cosf(vl_pi * solarTime / 12);
+             - cosf(latRads) * cosf(solarDeclination) * cosf(vlf_pi * solarTime / 12);
 
     return Vec3f(sx, sy, sz);
+}
+
+Vec2f SSLib::SunriseAndSunset(float timeZone, int julianDay, float latitude, float longitude)
+{
+    float solarTime =
+        +  (0.170f * sinf(4 * vlf_pi * (julianDay - 80) / 373)
+          - 0.129f * sinf(2 * vlf_pi * (julianDay -  8) / 355))
+        + (longitude / 15 - timeZone);
+
+    float solarDeclination = (0.4093f * sinf(vlf_twoPi * (julianDay - 81) / 368));
+    float latRads = DegreesToRadians(latitude);
+
+    float lhs = tanf(latRads) * tanf(solarDeclination);
+
+    // x = cos(theta) has two solutions for theta: acos(x) and 2pi - acos(x)
+    float h = 24.0f * acosf(lhs) / vlf_twoPi;
+    float sunrise =    h      - solarTime;
+    float sunset  = 24.0f - h - solarTime;
+
+    return Vec2f(sunrise, sunset);
 }
 
 const float SSLib::kSunDiameter   = 1.392f;
 const float SSLib::kSunDistance   = 149.6f;
 const float SSLib::kSunCosAngle   = sqrtf(1.0f - sqr(0.5f * kSunDiameter / kSunDistance));   // = 0.999989
-const float SSLib::kSunSolidAngle = vl_twoPi * (1.0f - kSunCosAngle);  // = 6.79998e-05 steradians
+const float SSLib::kSunSolidAngle = vlf_twoPi * (1.0f - kSunCosAngle);  // = 6.79998e-05 steradians
 
 
 //------------------------------------------------------------------------------
@@ -244,7 +263,7 @@ Vec3f SSLib::SunRGB(float cosTheta, float turbidity)
 
     float s = cosTheta;
     float t = (turbidity - 2.0f) / 10.0f; // useful range is 2-12
-    Vec3f sun = BiLerp(s, t, 16, 16, (const Vec3f*) kSunRadiance);
+    Vec3f sun = BiLerpSample(s, t, 16, 16, (const Vec3f*) kSunRadiance);
 
     // 683 converts from watts to candela at 540e12 hz. Really, we should be weighting by luminous efficiency curve rather than CIE_Y
     sun *=  683.0f;
@@ -311,26 +330,26 @@ namespace
 {
     const float kCIEStandardSkyCoeffs[15][5] =
     {
-        4.0, -0.70,  0, -1.0, 0,        // Overcast. When normalised this is a fit of the older (1 + 2cos(theta)) / 3 formula found in CIEOvercastSkyLuminance.
-        4.0, -0.70,  2, -1.5, 0.15,     // Overcast, with steep luminance gradation and slight brightening towards the sun
+        {  4.0, -0.70,  0, -1.0, 0    },   // Overcast. When normalised this is a fit of the older (1 + 2cos(theta)) / 3 formula found in CIEOvercastSkyLuminance.
+        {  4.0, -0.70,  2, -1.5, 0.15 },   // Overcast, with steep luminance gradation and slight brightening towards the sun
 
-        1.1, -0.80,  0, -1.0, 0,        // Overcast, moderately graded with azimuthal uniformity
-        1.1, -0.80,  2, -1.5, 0.15,     // Overcast, moderately graded and slight brightening towards the sun
+        {  1.1, -0.80,  0, -1.0, 0    },   // Overcast, moderately graded with azimuthal uniformity
+        {  1.1, -0.80,  2, -1.5, 0.15 },   // Overcast, moderately graded and slight brightening towards the sun
 
-        0.0, -1.00,  0, -1.0, 0,        // Sky of uniform luminance
-        0.0, -1.00,  2, -1.5, 0.15,     // Partly cloudy sky, no gradation towards zenith, slight brightening towards the sun
-        0.0, -1.00,  5, -2.5, 0.30,     // Partly cloudy sky, no gradation towards zenith, brighter circumsolar region
-        0.0, -1.00, 10, -3.0, 0.45,     // Partly cloudy sky, no gradation towards zenith, distinct solar corona
+        {  0.0, -1.00,  0, -1.0, 0    },   // Sky of uniform luminance
+        {  0.0, -1.00,  2, -1.5, 0.15 },   // Partly cloudy sky, no gradation towards zenith, slight brightening towards the sun
+        {  0.0, -1.00,  5, -2.5, 0.30 },   // Partly cloudy sky, no gradation towards zenith, brighter circumsolar region
+        {  0.0, -1.00, 10, -3.0, 0.45 },   // Partly cloudy sky, no gradation towards zenith, distinct solar corona
 
-       -1.0, -0.55,  2, -1.5, 0.15,     // Partly cloudy, with the obscured sun
-       -1.0, -0.55,  5, -2.5, 0.30,     // Partly cloudy, with brighter circumsolar region
-       -1.0, -0.55, 10, -3.0, 0.45,     // White-blue sky with distinct solar corona
+        { -1.0, -0.55,  2, -1.5, 0.15 },   // Partly cloudy, with the obscured sun
+        { -1.0, -0.55,  5, -2.5, 0.30 },   // Partly cloudy, with brighter circumsolar region
+        { -1.0, -0.55, 10, -3.0, 0.45 },   // White-blue sky with distinct solar corona
 
-       -1.0, -0.32, 10, -3.0, 0.45,     // CIE Standard Clear Sky, low illuminance turbidity. T <= 2.45
-       -1.0, -0.32, 16, -3.0, 0.30,     // CIE Standard Clear Sky, polluted atmosphere
+        { -1.0, -0.32, 10, -3.0, 0.45 },   // CIE Standard Clear Sky, low illuminance turbidity. T <= 2.45
+        { -1.0, -0.32, 16, -3.0, 0.30 },   // CIE Standard Clear Sky, polluted atmosphere
 
-       -1.0, -0.15, 16, -3.0, 0.30,     // Cloudless turbid sky with broad solar corona
-       -1.0, -0.15, 24, -2.8, 0.15,     // White-blue turbid sky with broad solar corona
+        { -1.0, -0.15, 16, -3.0, 0.30 },   // Cloudless turbid sky with broad solar corona
+        { -1.0, -0.15, 24, -2.8, 0.15 },   // White-blue turbid sky with broad solar corona
     };
 
     inline float CIELumRatio(const Vec3f& v, const Vec3f& toSun, float a, float b, float c, float d, float e)
@@ -361,7 +380,7 @@ float SSLib::CIEStandardSky(int type, const Vec3f& v, const Vec3f& toSun, float 
 
 float SSLib::ZenithLuminance(float thetaS, float T)
 {
-    float chi = (4.0f / 9.0f - T / 120.0f) * (vl_pi - 2.0f * thetaS);
+    float chi = (4.0f / 9.0f - T / 120.0f) * (vlf_pi - 2.0f * thetaS);
     float Lz = (4.0453f * T - 4.9710f) * tanf(chi) - 0.2155f * T + 2.4192f;
     Lz *= 1000.0;   // conversion from kcd/m^2 to cd/m^2
     return Lz;
@@ -404,7 +423,7 @@ namespace
     }
 }
 
-cSunSkyPreetham::cSunSkyPreetham() :
+SkyPreetham::SkyPreetham() :
     mToSun(vl_z),
 
     // mPerez_x[5] = {}
@@ -415,7 +434,7 @@ cSunSkyPreetham::cSunSkyPreetham() :
 {
 }
 
-void cSunSkyPreetham::Update(const Vec3f& sun, float turbidity, float overcast, float horizCrush)
+void SkyPreetham::Update(const Vec3f& sun, float turbidity, float overcast, float horizCrush)
 {
     mToSun = sun;
 
@@ -519,7 +538,7 @@ void cSunSkyPreetham::Update(const Vec3f& sun, float turbidity, float overcast, 
     mPerezInvDen = mZenith / perezLower;
 }
 
-Vec3f cSunSkyPreetham::SkyRGB(const Vec3f& v) const
+Vec3f SkyPreetham::SkyRGB(const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(mToSun, v);
@@ -540,7 +559,7 @@ Vec3f cSunSkyPreetham::SkyRGB(const Vec3f& v) const
     return xyYToRGB(xyY);
 }
 
-float cSunSkyPreetham::SkyLuminance(const Vec3f& v) const
+float SkyPreetham::SkyLuminance(const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(mToSun, v);
@@ -552,7 +571,7 @@ float cSunSkyPreetham::SkyLuminance(const Vec3f& v) const
     return PerezUpper(mPerez_Y, cosTheta, gamma, cosGamma) * mPerezInvDen.z;
 }
 
-Vec2f cSunSkyPreetham::SkyChroma(const Vec3f& v) const
+Vec2f SkyPreetham::SkyChroma(const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(mToSun, v);
@@ -570,7 +589,7 @@ Vec2f cSunSkyPreetham::SkyChroma(const Vec3f& v) const
 
 
 //------------------------------------------------------------------------------
-// cSunSkyHosek
+// SkyHosek
 //------------------------------------------------------------------------------
 
 namespace
@@ -640,7 +659,7 @@ namespace
 
         float tbf = turbidity - tbi;
 
-        const float s = powf(solarElevation / vl_halfPi, (1.0f / 3.0f));
+        const float s = powf(solarElevation / vlf_halfPi, (1.0f / 3.0f));
 
         float quinticWeights[6];
         FindQuinticWeights(s, quinticWeights);
@@ -675,6 +694,57 @@ namespace
                       + cw[3] * ic[3][i];
 
         return cw[0] * ir[0] + cw[1] * ir[1] + cw[2] * ir[2] + cw[3] * ir[3];
+    }
+
+    inline Vec4f CubicWeights(float s)
+    {
+        float s1 = s;
+        float s2 = s1 * s1;
+        float s3 = s1 * s2;
+
+        float is1 = 1.0f - s1;
+        float is2 = is1 * is1;
+        float is3 = is1 * is2;
+
+        return Vec4f(is3, is2 * s1 * 3.0f, is1 * s2 * 3.0f, s3);
+    }
+
+    float FindHosekCoeffs
+    (
+        const float   datasetC[10][4][2][4],
+        float         turbidity,
+        float         albedo,
+        float         solarElevation,
+        float         coeffs[9]
+    )
+    {
+        const float t = (turbidity - 1.0f) / 9.0f;
+        const float s = powf(solarElevation / vlf_halfPi, (1.0f / 3.0f));
+
+        Vec4f wt = CubicWeights(t);
+        Vec4f ws = CubicWeights(s);
+
+        float rad;
+
+        for (int ic = 0; ic < 10; ic++)
+        {
+            Vec4f cs;
+
+            for (int iz = 0; iz < 4; iz++)
+            {
+                const Vec4f& ct0 = (Vec4f&) *datasetC[ic][iz][0];
+                const Vec4f& ct1 = (Vec4f&) *datasetC[ic][iz][1];
+
+                cs[iz] = dot(wt, lerp(ct0, ct1, albedo));
+            }
+
+            if (ic == 0)
+                rad = dot(ws, cs);
+            else
+                coeffs[ic - 1] = dot(ws, cs);
+        }
+
+        return rad;
     }
 
     // Hosek:
@@ -721,24 +791,34 @@ namespace
 }
 
 
-cSunSkyHosek::cSunSkyHosek() :
+SkyHosek::SkyHosek() :
     mToSun(vl_z)
 {
 }
 
-void cSunSkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, float overcast)
+void SkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, float overcast)
 {
     mToSun = sun;
 
     float solarElevation = mToSun.z > 0.0f ? asinf(mToSun.z) : 0.0f;    // altitude rather than zenith, so sin rather than cos
 
-    Vec3f albedo = RGBToXYZ(rgbAlbedo);
+    mAlbedo = RGBToXYZ(rgbAlbedo);
 
     // Note that the hosek coefficients change with time of day, vs. Preetham where the 'upper' coefficients stay the same,
     // and only the scaler mPerezInvDen, consisting of time-dependent normalisation and zenith luminnce factors, changes.
-    mRadXYZ[0] = FindHosekCoeffs(kHosekCoeffsX, kHosekRadX, turbidity, albedo.x, solarElevation, mCoeffsXYZ[0]);
-    mRadXYZ[1] = FindHosekCoeffs(kHosekCoeffsY, kHosekRadY, turbidity, albedo.y, solarElevation, mCoeffsXYZ[1]);
-    mRadXYZ[2] = FindHosekCoeffs(kHosekCoeffsZ, kHosekRadZ, turbidity, albedo.z, solarElevation, mCoeffsXYZ[2]);
+
+    if (!mUseCubic)
+    {
+        mRadXYZ[0] = FindHosekCoeffs(kHosekCoeffsX, kHosekRadX, turbidity, mAlbedo.x, solarElevation, mCoeffsXYZ[0]);
+        mRadXYZ[1] = FindHosekCoeffs(kHosekCoeffsY, kHosekRadY, turbidity, mAlbedo.y, solarElevation, mCoeffsXYZ[1]);
+        mRadXYZ[2] = FindHosekCoeffs(kHosekCoeffsZ, kHosekRadZ, turbidity, mAlbedo.z, solarElevation, mCoeffsXYZ[2]);
+    }
+    else
+    {
+        mRadXYZ[0] = FindHosekCoeffs(kHCX, turbidity, mAlbedo.x, solarElevation, mCoeffsXYZ[0]);
+        mRadXYZ[1] = FindHosekCoeffs(kHCY, turbidity, mAlbedo.y, solarElevation, mCoeffsXYZ[1]);
+        mRadXYZ[2] = FindHosekCoeffs(kHCZ, turbidity, mAlbedo.z, solarElevation, mCoeffsXYZ[2]);
+    }
 
     mRadXYZ *= 683; // convert to luminance in lumens
 
@@ -748,7 +828,7 @@ void cSunSkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, fl
         float is = 1.0f - s;
 
         // Emulate Preetham's zenith darkening
-        float darken = ZenithLuminance(acosf(mToSun.z), turbidity) / ZenithLuminance(vl_halfPi, turbidity);
+        float darken = ZenithLuminance(acosf(mToSun.z), turbidity) / ZenithLuminance(vlf_halfPi, turbidity);
 
         // Take C/E/F which control sun term to zero
         for (int j = 0; j < 3; j++)
@@ -784,9 +864,9 @@ void cSunSkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, fl
         float gammaZ    = acosf(cosGammaZ);
         float cosGammaH = mToSun.y;
         float gammaHP   = acosf(+mToSun.y);
-        float gammaHN   = vl_pi - gammaHP;
+        float gammaHN   = vlf_pi - gammaHP;
 
-        float sc0 = EvalHosekCoeffs(mCoeffsXYZ[1], 1.0f, gammaZ, cosGammaZ) * 2.0f
+        float sc0 = EvalHosekCoeffs(mCoeffsXYZ[1], 1.0f, gammaZ,   cosGammaZ) * 2.0f
                   + EvalHosekCoeffs(mCoeffsXYZ[1], 0.0f, gammaHP, +cosGammaH)
                   + EvalHosekCoeffs(mCoeffsXYZ[1], 0.0f, gammaHN, -cosGammaH);
 
@@ -810,7 +890,7 @@ void cSunSkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, fl
             mCoeffsXYZ[j][1] = lerp(mCoeffsXYZ[j][1], -0.7f, is);
         }
 
-        float sc1 = EvalHosekCoeffs(mCoeffsXYZ[1], 1.0f, gammaZ, cosGammaZ) * 2.0f
+        float sc1 = EvalHosekCoeffs(mCoeffsXYZ[1], 1.0f, gammaZ,   cosGammaZ) * 2.0f
                   + EvalHosekCoeffs(mCoeffsXYZ[1], 0.0f, gammaHP, +cosGammaH)
                   + EvalHosekCoeffs(mCoeffsXYZ[1], 0.0f, gammaHN, -cosGammaH);
 
@@ -833,7 +913,7 @@ void cSunSkyHosek::Update(const Vec3f& sun, float turbidity, Vec3f rgbAlbedo, fl
 #endif
 }
 
-float cSunSkyHosek::SkyLuminance(const Vec3f& v) const
+float SkyHosek::SkyLuminance(const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(mToSun, v);
@@ -845,7 +925,7 @@ float cSunSkyHosek::SkyLuminance(const Vec3f& v) const
     return EvalHosekCoeffs(mCoeffsXYZ[1], cosTheta, gamma, cosGamma) * mRadXYZ.y;
 }
 
-Vec3f cSunSkyHosek::SkyXYZ(const Vec3f& v) const
+Vec3f SkyHosek::SkyXYZ(const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(mToSun, v);
@@ -866,20 +946,49 @@ Vec3f cSunSkyHosek::SkyXYZ(const Vec3f& v) const
     return XYZ;
 }
 
-Vec3f cSunSkyHosek::SkyRGB(const Vec3f& v) const
+Vec3f SkyHosek::SkyRGB(const Vec3f& v) const
 {
     return XYZToRGB(SkyXYZ(v));
 }
 
 
 //------------------------------------------------------------------------------
-// cSunSkyTable
+// SkyTable
 //------------------------------------------------------------------------------
 
 // Pre-calculated table version, particularly useful for shader use
 
 namespace
 {
+#ifdef REMAP_THETA
+    // remap cos theta to concentrate table around horizon
+    inline float MapTheta(float t)
+    {
+        return t >= 0.0f ? sqrtf(t) : -sqrtf(-t);
+    }
+    inline float UnmapTheta(float t)
+    {
+        return t >= 0.0f ? sqr(t) : -sqr(t);
+    }
+    inline float UnmapThetaWeight(float t)
+    {
+        return 2 * fabsf(t);
+    }
+#else
+    inline float MapTheta(float t)
+    {
+        return t;
+    }
+    inline float UnmapTheta(float t)
+    {
+        return t;
+    }
+    inline float UnmapThetaWeight(float t)
+    {
+        return 1.0f;
+    }
+#endif
+
     // remap cosGamma to concentrate table around the sun location
     inline float MapGamma(float g)
     {
@@ -889,16 +998,21 @@ namespace
     {
         return 1 - 2 * sqr(g);
     }
+    inline float UnmapGammaWeight(float g)
+    {
+        // |UnmapGamma'|
+        return 4 * g;
+    }
 }
 
-void cSunSkyTable::FindThetaGammaTables(const cSunSkyPreetham& pt)
+void SkyTable::FindThetaGammaTables(const SkyPreetham& pt)
 {
     float dt = 1.0f / (kTableSize - 1);
     float t = dt * 1e-6f;    // epsilon to avoid divide by 0, which can lead to NaN when m_perez_[1] = 0
 
     for (int i = 0; i < kTableSize; i++)
     {
-        float cosTheta = t;
+        float cosTheta = UnmapTheta(t);
 
         mThetaTable[i][0] =  -pt.mPerez_x[0] * expf(pt.mPerez_x[1] / cosTheta);
         mThetaTable[i][1] =  -pt.mPerez_y[0] * expf(pt.mPerez_y[1] / cosTheta);
@@ -936,45 +1050,45 @@ void cSunSkyTable::FindThetaGammaTables(const cSunSkyPreetham& pt)
 
 #ifdef LOCAL_DEBUG
     printf("PTx: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].x);
     printf("\n");
     printf("PTy: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].y);
     printf("\n");
     printf("PTY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].z);
     printf("\n");
 
     printf("PGx: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].x);
     printf("\n");
     printf("PGy: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].y);
     printf("\n");
     printf("PGY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].z);
     printf("\n");
 #endif
 }
 
-void cSunSkyTable::FindThetaGammaTables(const cSunSkyHosek& hk)
+void SkyTable::FindThetaGammaTables(const SkyHosek& hk)
 {
-    float dt = 1.0f / (kTableSize - 1);
-    float t = 0.0f;
-
     const float (&coeffsXYZ)[3][9] = hk.mCoeffsXYZ;
 
     mMaxGamma = 1.0f;
 
+    float dt = 1.0f / (kTableSize - 1);
+    float t = 0.0f;
+
     for (int i = 0; i < kTableSize; i++)
     {
-        float cosTheta = t;
+        float cosTheta = UnmapTheta(t);
         float cosGamma = UnmapGamma(t);
         float gamma = acosf(cosGamma);
 
@@ -1013,34 +1127,34 @@ void cSunSkyTable::FindThetaGammaTables(const cSunSkyHosek& hk)
 
 #ifdef LOCAL_DEBUG
     printf("HTY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].x);
     printf("\n");
     printf("HTY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].y);
     printf("\n");
     printf("HTY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mThetaTable[i].z);
     printf("\n");
 
     printf("HGX: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].x);
     printf("\n");
     printf("HGY: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].y);
     printf("\n");
     printf("HGZ: ");
-    for (int i = 0; i < kTableSize; i+= 4)
+    for (int i = 0; i < kTableSize; i += 4)
         printf("%5.2f ", mGammaTable[i].z);
     printf("\n");
 #endif
 }
 
-Vec3f cSunSkyTable::SkyRGB(const cSunSkyPreetham& pt, const Vec3f& v) const
+Vec3f SkyTable::SkyRGB(const SkyPreetham& pt, const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(pt.mToSun, v);
@@ -1048,11 +1162,11 @@ Vec3f cSunSkyTable::SkyRGB(const cSunSkyPreetham& pt, const Vec3f& v) const
     if (cosTheta < 0.0f)
         cosTheta = 0.0f;
 
-    float t = cosTheta;
+    float t = MapTheta(cosTheta);
     float g = MapGamma(cosGamma);
 
-    Vec3f F = Lerp(t, kTableSize, mThetaTable);
-    Vec3f G = Lerp(g, kTableSize, mGammaTable);
+    Vec3f F = LerpSample(t, kTableSize, mThetaTable);
+    Vec3f G = LerpSample(g, kTableSize, mGammaTable);
 
 #ifdef SIM_CLAMP
     F.z *= mMaxTheta;
@@ -1066,7 +1180,7 @@ Vec3f cSunSkyTable::SkyRGB(const cSunSkyPreetham& pt, const Vec3f& v) const
     return xyYToRGB(xyY);
 }
 
-Vec3f cSunSkyTable::SkyRGB(const cSunSkyHosek& hk, const Vec3f& v) const
+Vec3f SkyTable::SkyRGB(const SkyHosek& hk, const Vec3f& v) const
 {
     float cosTheta = v.z;
     float cosGamma = dot(hk.mToSun, v);
@@ -1074,11 +1188,11 @@ Vec3f cSunSkyTable::SkyRGB(const cSunSkyHosek& hk, const Vec3f& v) const
     if (cosTheta < 0.0f)
         cosTheta = 0.0f;
 
-    float t = cosTheta;
+    float t = MapTheta(cosTheta);
     float g = MapGamma(cosGamma);
 
-    Vec3f F = Lerp(t, kTableSize, mThetaTable);
-    Vec3f G = Lerp(g, kTableSize, mGammaTable);
+    Vec3f F = LerpSample(t, kTableSize, mThetaTable);
+    Vec3f G = LerpSample(g, kTableSize, mGammaTable);
 
     const float zenith = sqrtf(cosTheta);
     Vec3f H
@@ -1114,10 +1228,10 @@ namespace
     }
 }
 
-void cSunSkyTable::FillTexture(int width, int height, uint8_t image[][4]) const
+void SkyTable::FillTexture(int width, int height, uint8_t image[][4]) const
 {
-    CL_ASSERT(width == kTableSize);
-    CL_ASSERT(height == 2);
+    VL_ASSERT(width == kTableSize);
+    VL_ASSERT(height == 2);
 
     (void) width;
     (void) height;
@@ -1155,10 +1269,10 @@ void cSunSkyTable::FillTexture(int width, int height, uint8_t image[][4]) const
     }
 }
 
-void cSunSkyTable::FillTexture(int width, int height, float image[][4]) const
+void SkyTable::FillTexture(int width, int height, float image[][4]) const
 {
-    CL_ASSERT(width == kTableSize);
-    CL_ASSERT(height == 2);
+    VL_ASSERT(width == kTableSize);
+    VL_ASSERT(height == 2);
 
     (void) width;
     (void) height;
@@ -1173,7 +1287,7 @@ void cSunSkyTable::FillTexture(int width, int height, float image[][4]) const
 }
 
 //------------------------------------------------------------------------------
-// cSunSkyBRDF
+// SkyBRDF
 //------------------------------------------------------------------------------
 
 // Extended version that enables lerping between perfect mirror and fully
@@ -1182,13 +1296,13 @@ void cSunSkyTable::FillTexture(int width, int height, float image[][4]) const
 namespace
 {
     // ZH routines from SHLib
-    const float kZH_Y_0 = sqrtf( 1 / (   4 * vl_pi));  //         1
-    const float kZH_Y_1 = sqrtf( 3 / (   4 * vl_pi));  //         z
-    const float kZH_Y_2 = sqrtf( 5 / (  16 * vl_pi));  // 1/2     (3 z^2 - 1)
-    const float kZH_Y_3 = sqrtf( 7 / (  16 * vl_pi));  // 1/2     (5 z^3 - 3 z)
-    const float kZH_Y_4 = sqrtf( 9 / ( 256 * vl_pi));  // 1/8     (35 z^4 - 30 z^2 + 3)
-    const float kZH_Y_5 = sqrtf(11 / ( 256 * vl_pi));  // 1/8     (63 z^5 - 70 z^3 + 15 z)
-    const float kZH_Y_6 = sqrtf(13 / (1024 * vl_pi));  // 1/16    (231 z^6 - 315 z^4 + 105 z^2 - 5)
+    const float kZH_Y_0 = sqrtf( 1 / (   4 * vlf_pi));  //         1
+    const float kZH_Y_1 = sqrtf( 3 / (   4 * vlf_pi));  //         z
+    const float kZH_Y_2 = sqrtf( 5 / (  16 * vlf_pi));  // 1/2     (3 z^2 - 1)
+    const float kZH_Y_3 = sqrtf( 7 / (  16 * vlf_pi));  // 1/2     (5 z^3 - 3 z)
+    const float kZH_Y_4 = sqrtf( 9 / ( 256 * vlf_pi));  // 1/8     (35 z^4 - 30 z^2 + 3)
+    const float kZH_Y_5 = sqrtf(11 / ( 256 * vlf_pi));  // 1/8     (63 z^5 - 70 z^3 + 15 z)
+    const float kZH_Y_6 = sqrtf(13 / (1024 * vlf_pi));  // 1/16    (231 z^6 - 315 z^4 + 105 z^2 - 5)
 
     void CalcCosPowerSatZH7(float n, float zcoeffs[7])
     {
@@ -1201,18 +1315,71 @@ namespace
         zcoeffs[6] = 231.0f / (n + 7) - 315.0f / (n + 5) + 105.0f / (n + 3) - 5.0f / (n + 1);
 
         // apply norm constants
-        zcoeffs[0] *= vl_twoPi * kZH_Y_0;
-        zcoeffs[1] *= vl_twoPi * kZH_Y_1;
-        zcoeffs[2] *= vl_twoPi * kZH_Y_2;
-        zcoeffs[3] *= vl_twoPi * kZH_Y_3;
-        zcoeffs[4] *= vl_twoPi * kZH_Y_4;
-        zcoeffs[5] *= vl_twoPi * kZH_Y_5;
-        zcoeffs[6] *= vl_twoPi * kZH_Y_6;
+        zcoeffs[0] *= vlf_twoPi * kZH_Y_0;
+        zcoeffs[1] *= vlf_twoPi * kZH_Y_1;
+        zcoeffs[2] *= vlf_twoPi * kZH_Y_2;
+        zcoeffs[3] *= vlf_twoPi * kZH_Y_3;
+        zcoeffs[4] *= vlf_twoPi * kZH_Y_4;
+        zcoeffs[5] *= vlf_twoPi * kZH_Y_5;
+        zcoeffs[6] *= vlf_twoPi * kZH_Y_6;
 
-        // [0]: 2pi sqrtf( 1 / (   4 * vl_pi)) / 1
-        // we'll multiply by alpha = sqrtf(4.0f * vl_pi / (2 * i + 1)) in convolution, leaving 2pi.
+        // [0]: 2pi sqrtf( 1 / (   4 * vlf_pi)) / 1
+        // we'll multiply by alpha = sqrtf(4.0f * vlf_pi / (2 * i + 1)) in convolution, leaving 2pi.
     }
 
+    void CalcZH7Weights(float z, float w[7])
+    {
+        float z2 = z * z;
+        float z3 = z2 * z;
+        float z4 = z2 * z2;
+        float z5 = z2 * z3;
+        float z6 = z3 * z3;
+
+        w[0] = kZH_Y_0;
+        w[1] = kZH_Y_1 * z;
+        w[2] = kZH_Y_2 * (3 * z2 - 1);
+        w[3] = kZH_Y_3 * (5 * z3 - 3 * z);
+        w[4] = kZH_Y_4 * (35 * z4 - 30 * z2 + 3);
+        w[5] = kZH_Y_5 * (63 * z5 - 70 * z3 + 15 * z);
+        w[6] = kZH_Y_6 * (231 * z6 - 315 * z4 + 105 * z2 - 5);
+    }
+
+    inline float WindowScale(int n, float gamma)
+    {
+        float nt = float(n * (n + 1));
+        return 1.0f / (1.0f + gamma * nt * nt);
+    }
+    // End ZH routines from SHLib
+
+    template<class T> T SampleZH7(float z, const T zhCoeffs[7])
+    {
+        float weights[7];
+        CalcZH7Weights(z, weights);
+
+        T c = zhCoeffs[0] * weights[0];
+
+        for (int i = 1; i < 7; i++)
+            c += zhCoeffs[i] * weights[i];
+
+        return c;
+    }
+
+    template<class T> void AddZH7Sample(float z, T c, T zhCoeffs[7])
+    {
+        float weights[7];
+        CalcZH7Weights(z, weights);
+
+        for (int i = 0; i < 7; i++)
+            zhCoeffs[i] += c * weights[i];
+    }
+
+    template<class T> void ApplyZH7Windowing(float gamma, T coeffs[7])
+    {
+        for (int i = 0; i < 7; i++)
+            coeffs[i] *= WindowScale(i, gamma);
+    }
+
+    // ConvolveZHWithZH with Vec3 and divides result through by the first coefficient.
     template<class T> void ConvolveZH7WithZH7Norm(const float brdfCoeffs[7], const T zhCoeffsIn[7], T zhCoeffsOut[7])
     {
         zhCoeffsOut[0] = zhCoeffsIn[0];
@@ -1225,57 +1392,71 @@ namespace
         }
     }
 
-    template<class T> void AddZH7Sample(float z, T c, T zhCoeffs[7])
+    template<class T> void FindZH7FromThetaTable(int tableSize, const T table[], T zhCoeffs[7])
     {
-        float z2 = z * z;
-        float z3 = z2 * z;
-        float z4 = z2 * z2;
-        float z5 = z2 * z3;
-        float z6 = z3 * z3;
+        float dt = 1.0f / (tableSize - 1);
+        float t = 0.0f;
 
-        zhCoeffs[0] += c * kZH_Y_0;
-        zhCoeffs[1] += c * kZH_Y_1 * z;
-        zhCoeffs[2] += c * kZH_Y_2 * (3 * z2 - 1);
-        zhCoeffs[3] += c * kZH_Y_3 * (5 * z3 - 3 * z);
-        zhCoeffs[4] += c * kZH_Y_4 * (35 * z4 - 30 * z2 + 3);
-        zhCoeffs[5] += c * kZH_Y_5 * (63 * z5 - 70 * z3 + 15 * z);
-        zhCoeffs[6] += c * kZH_Y_6 * (231 * z6 - 315 * z4 + 105 * z2 - 5);
-    }
+        float w = vlf_twoPi * 2 * dt; // 2pi dz = 2pi 2 dt
 
-    template<class T> T EvalZH7(float z, const T zhCoeffs[7])
-    {
-        float z2 = z * z;
-        float z3 = z2 * z;
-        float z4 = z2 * z2;
-        float z5 = z2 * z3;
-        float z6 = z3 * z3;
-
-        T c;
-
-        c  = zhCoeffs[0] * kZH_Y_0;
-        c += zhCoeffs[1] * kZH_Y_1 * z;
-        c += zhCoeffs[2] * kZH_Y_2 * (3 * z * z - 1);
-        c += zhCoeffs[3] * kZH_Y_3 * (5 * z3 - 3 * z);
-        c += zhCoeffs[4] * kZH_Y_4 * (35 * z4 - 30 * z2 + 3);
-        c += zhCoeffs[5] * kZH_Y_5 * (63 * z5 - 70 * z3 + 15 * z);
-        c += zhCoeffs[6] * kZH_Y_6 * (231 * z6 - 315 * z4 + 105 * z2 - 5);
-
-        return c;
-    }
-
-    // Windowing a la Peter-Pike Sloan
-    inline float WindowScale(int n, float gamma)
-    {
-        float nt = float(n * (n + 1));
-        return 1.0f / (1.0f + gamma * nt * nt);
-    }
-
-    template<class T> void ApplyZH7Windowing(float gamma, T coeffs[7])
-    {
         for (int i = 0; i < 7; i++)
-            coeffs[i] *= WindowScale(i, gamma);
+            zhCoeffs[i] = vl_0;
+
+        for (int i = 0; i < tableSize; i++)
+        {
+            float tt = 2 * t - 1;
+            float z = UnmapTheta(tt);
+            float dz = vlf_twoPi * UnmapThetaWeight(tt) * (2.0f * dt);
+            AddZH7Sample(z, table[i] * dz, zhCoeffs);
+
+            t += dt;
+        }
     }
-    // End
+
+    template<class T> void GenerateThetaTableFromZH7(const T zhCoeffs[7], int tableSize, T table[])
+    {
+        float dt = 1.0f / (tableSize - 1);
+        float t = 0.0f;
+
+        for (int i = 0; i < tableSize; i++)
+        {
+            table[i] = SampleZH7(UnmapTheta(2 * t - 1), zhCoeffs);
+
+            t += dt;
+        }
+    }
+
+    template<class T> void FindZH7FromGammaTable(int tableSize, const T table[], T zhCoeffs[7])
+    {
+        float dg = 1.0f / (tableSize - 1);
+        float g = 0.0f;
+
+        for (int i = 0; i < 7; i++)
+            zhCoeffs[i] = vl_0;
+
+        for (int i = 0; i < tableSize; i++)
+        {
+            // Works better for gamma to effectively importance-sample sun area
+            float z = UnmapGamma(g);
+            float dz = vlf_twoPi * UnmapGammaWeight(g) * dg;
+
+            AddZH7Sample(z, table[i] * dz, zhCoeffs);
+
+            g += dg;
+        }
+    }
+
+    template<class T> void GenerateGammaTableFromZH7(T zhCoeffs[7], int tableSize, T table[])
+    {
+        float dg = 1.0f / (tableSize - 1);
+        float g = 0.0f;
+
+        for (int i = 0; i < tableSize; i++)
+        {
+            table[i] = SampleZH7(UnmapGamma(g), zhCoeffs);
+            g += dg;
+        }
+    }
 
     inline Vec3f Bias_xyY(Vec3f c)  // effectively make delta lum proportional to real lum, and scale xy by lum
     {
@@ -1297,92 +1478,43 @@ namespace
         return c;
     }
 
-    template<class T> void FindZH7FromThetaTable(int tableSize, const T table[], T zhCoeffs[7])
-    {
-        float dt = 1.0f / (tableSize - 1);
-        float t = 0.0f;
-
-        float w = vl_twoPi * 2 * dt; // 2pi dz = 2pi 2 dt
-
-        for (int i = 0; i < 7; i++)
-            zhCoeffs[i] = vl_0;
-
-        for (int i = 0; i < tableSize; i++)
-        {
-            AddZH7Sample(2 * t - 1, table[i] * w, zhCoeffs);
-            t += dt;
-        }
-    }
-
-    template<class T> void GenerateThetaTableFromZH7(const T zhCoeffs[7], int tableSize, T table[])
-    {
-        float dt = 1.0f / (tableSize - 1);
-        float t = 0.0f;
-
-        for (int i = 0; i < tableSize; i++)
-        {
-            table[i] = EvalZH7(2 * t - 1, zhCoeffs);
-            t += dt;
-        }
-    }
-
-    template<class T> void FindZH7FromGammaTable(int tableSize, const T table[], T zhCoeffs[7])
-    {
-        float dg = 1.0f / (tableSize - 1);
-        float g = 0.0f;
-
-        float w = vl_twoPi * 4 * dg; // 2pi dz = 2pi -4 g dg
-
-        for (int i = 0; i < 7; i++)
-            zhCoeffs[i] = vl_0;
-
-        for (int i = 0; i < tableSize; i++)
-        {
-            AddZH7Sample(UnmapGamma(g), table[i] * w * g, zhCoeffs);
-            g += dg;
-        }
-    }
-
-    template<class T> void GenerateGammaTableFromZH7(T zhCoeffs[7], int tableSize, T table[])
-    {
-        float dg = 1.0f / (tableSize - 1);
-        float g = 0.0f;
-
-        for (int i = 0; i < tableSize; i++)
-        {
-            table[i] = EvalZH7(UnmapGamma(g), zhCoeffs);
-            g += dg;
-        }
-    }
-
     const float kThetaW = 0.01f;    // windowing gamma to use for theta table
     const float kGammaW = 0.002f;   // windowing gamma to use for gamma table
 
-    const float kThetaWHosek = 0.05f;   // windowing gamma to use for Hosek theta table
-    const float kGammaWHosek = 0.005f;  // windowing gamma to use for gamma table
+    float kThetaWHosek  = 0.11f;   // windowing gamma to use for Hosek theta table
+    float kGammaWHosek  = 0.002f;  // windowing gamma to use for Hosek gamma table
+    float kThetaWHosekH = 0.01f;   // windowing gamma to use for Hosek theta/H table
+
+    constexpr float RowPower(float i, float n)
+    {
+        // use N = 2 / r^2 - 2, and then +1 for base cos power
+        // float r = i / (n - 1);  requires C++14, amazing
+        // return 2.0f / (r * r + 1e-8f) - 1.0f;
+        return 2.0f / ((i / (n - 1)) * (i / (n - 1)) + 1e-8f) - 1.0f;
+    }
 
 #ifdef COMPACT_BRDF_TABLE
-    const float kRowPowers[cSunSkyBRDF::kBRDFSamples - 1] = { 1.0f, 8.0f, 256.0f };
+    const float kRowPowers[SkyBRDF::kBRDFSamples] = { RowPower(0, 4), RowPower(1, 4), RowPower(2, 4), RowPower(3, 4) };
 #else
-    const float kRowPowers[cSunSkyBRDF::kBRDFSamples - 1] = { 1.0f, 2.0f, 4.0f, 8.0f, 16.0f, 32.0f, 96.0f };
+    const float kRowPowers[SkyBRDF::kBRDFSamples] = { RowPower(0, 8), RowPower(1, 8), RowPower(2, 8), RowPower(3, 8), RowPower(4, 8), RowPower(5, 8), RowPower(6, 8), RowPower(7, 8) };
 #endif
 }
 
-void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyPreetham&)
+void SkyBRDF::FindBRDFTables(const SkyTable& table, const SkyPreetham&)
 {
     // The BRDF tables cover the entire sphere, so we must resample theta from the Perez/Hosek tables which cover a hemisphere.
-    Vec3f thetaTable[cSunSkyTable::kTableSize];
+    Vec3f thetaTable[kTableSize];
     const Vec3f* gammaTable = table.mGammaTable;
 
     // Fill top hemisphere of table
-    for (int i = 0; i < kTableSize / 2; i++)
-        thetaTable[kTableSize / 2 + i] = table.mThetaTable[2 * i];
+    for (int i = 0; i < kHalfTableSize; i++)
+        thetaTable[kHalfTableSize + i] = table.mThetaTable[2 * i];
 
     // Fill lower hemisphere with term that evaluates close to 0, to avoid below-ground luminance leaking in.
     // TODO: modify this using ground albedo
     Vec3f lowerHemi = Vec3f(0.0f, 0.0f, 0.999f);  // 0.999 as theta table is used as (1 - F)
 
-    for (int i = 0; i < kTableSize / 2; i++)
+    for (int i = 0; i < kHalfTableSize; i++)
         thetaTable[i] = lowerHemi;
 
     // Project tables into ZH coefficients
@@ -1397,15 +1529,18 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyPreetha
     FindZH7FromThetaTable(kTableSize, biasedThetaTable, zhCoeffsTheta);
     FindZH7FromGammaTable(kTableSize,       gammaTable, zhCoeffsGamma);
 
+    ApplyZH7Windowing(kThetaW, zhCoeffsTheta);
+    ApplyZH7Windowing(kGammaW, zhCoeffsGamma);
+
     // row 0 is the original unconvolved signal
 
     // Firstly, fill -ve z with reflected +ve z, ramped to 0 at z = -1. This avoids discontinuities at the horizon.
-    for (int i = 0; i < kTableSize / 2; i++)
+    for (int i = 0; i < kHalfTableSize; i++)
     {
         thetaTable[i] = table.mThetaTable[kTableSize - 1 - 2 * i];
 
         // Ramp luminance down
-        float s = (i + 0.5f) / (kTableSize / 2);
+        float s = (i + 0.5f) / kHalfTableSize;
         s = sqrtf(s);
 
         thetaTable[i].z = thetaTable[i].z * s + (1 - s);
@@ -1423,20 +1558,13 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyPreetha
 
     for (int r = 1; r < kBRDFSamples; r++)
     {
-        int rs = kBRDFSamples - r - 1;
-        float s = kRowPowers[rs];
+        float s = kRowPowers[r];
 
         float csCoeffs[7];
         CalcCosPowerSatZH7(s, csCoeffs);
 
         ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsTheta, zhCoeffsThetaConv);
         ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsGamma, zhCoeffsGammaConv);
-
-        // Scale up to full windowing at full spec power...
-        float rw = sqrtf(rs / float(kBRDFSamples - 2));
-
-        ApplyZH7Windowing(kThetaW * rw, zhCoeffsThetaConv);
-        ApplyZH7Windowing(kGammaW * rw, zhCoeffsGammaConv);
 
         GenerateThetaTableFromZH7(zhCoeffsThetaConv, kTableSize, mBRDFThetaTable[r]);
         GenerateGammaTableFromZH7(zhCoeffsGammaConv, kTableSize, mBRDFGammaTable[r]);
@@ -1456,28 +1584,28 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyPreetha
         {
             mBRDFThetaTable  [r][i] = ClampUnit(mBRDFThetaTable  [r][i]);
             mBRDFGammaTable  [r][i] = ClampUnit(mBRDFGammaTable  [r][i]);
-            mBRDFThetaTableH [r][i] = ClampUnit(mBRDFThetaTableH [r][i]);
-            mBRDFThetaTableFH[r][i] = ClampUnit(mBRDFThetaTableFH[r][i]);
         }
 #endif
 }
 
-void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& )
+void SkyBRDF::FindBRDFTables(const SkyTable& table, const SkyHosek& hk)
 {
     // The BRDF tables cover the entire sphere, so we must resample theta from the Perez/Hosek tables which cover a hemisphere.
-    Vec3f thetaTable[cSunSkyTable::kTableSize];
+    Vec3f thetaTable[SkyTable::kTableSize];
     const Vec3f* gammaTable = table.mGammaTable;
 
     // Fill top hemisphere of table
-    for (int i = 0; i < kTableSize / 2; i++)
-        thetaTable[kTableSize / 2 + i] = table.mThetaTable[2 * i];
+    for (int i = 0; i < kHalfTableSize; i++)
+        thetaTable[kHalfTableSize + i] = table.mThetaTable[2 * i];
 
-    // Fill lower hemisphere with term that evaluates close to 0, to avoid below-ground luminance leaking in.
-    // TODO: modify this using ground albedo
-    Vec3f lowerHemi = Vec3f(0.999f);  // 0.999 as theta table is used as (1 - F)
+    // Fill lower hemisphere with albedo-weighted sky.
 
-    for (int i = 0; i < kTableSize / 2; i++)
-        thetaTable[i] = lowerHemi;
+    for (int i = 0; i < kHalfTableSize; i++)
+    {
+        thetaTable[i] = table.mThetaTable[kTableSize - 1 - 2 * i];
+        // Table is F, C = (1 - F)
+        thetaTable[i] = Vec3f(vl_1) - hk.mAlbedo * (Vec3f(vl_1) - thetaTable[i]);
+    }
 
     // Project tables into ZH coefficients
     Vec3f zhCoeffsTheta[7];
@@ -1492,20 +1620,10 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& 
     FindZH7FromThetaTable(kTableSize, biasedThetaTable, zhCoeffsTheta);
     FindZH7FromGammaTable(kTableSize,       gammaTable, zhCoeffsGamma);
 
-    // row 0 is the original unconvolved signal
+    ApplyZH7Windowing(kThetaWHosek, zhCoeffsTheta);
+    ApplyZH7Windowing(kGammaWHosek, zhCoeffsGamma);
 
-    // Firstly, fill -ve z with reflected +ve z, ramped to 0 at z = -1. This avoids discontinuities at the horizon.
-    for (int i = 0; i < kTableSize / 2; i++)
-    {
-        thetaTable[i] = table.mThetaTable[kTableSize - 1 - 2 * i];
-
-        // Ramp luminance down
-        float s = (i + 0.5f) / (kTableSize / 2);
-        s = sqrtf(s);
-
-        thetaTable[i] = thetaTable[i] * s + Vec3f(1 - s);
-    }
-
+    // row 0 is the original unconvolved signal, just copy it
     for (int i = 0; i < kTableSize; i++)
     {
         mBRDFThetaTable[0][i] = thetaTable[i];
@@ -1513,15 +1631,13 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& 
     }
 
     // Construct H term table -- just the zenith part as we can potentially store as 4th component
-    for (int i = 0; i < kTableSize / 2; i++)
-        mBRDFThetaTableH[0][i] = vl_0;
-
-    for (int i = 0; i < kTableSize / 2; i++)
+    for (int i = 0; i < kHalfTableSize; i++)
     {
-        float cosTheta = i / float(kTableSize / 2 - 1); // XXX
+        float cosTheta = UnmapTheta(i / float(kHalfTableSize - 1));
         float zenith = sqrtf(cosTheta);
 
-        mBRDFThetaTableH[0][kTableSize / 2 + i] = zenith;
+        mBRDFThetaTableH[0][kHalfTableSize + i   ] = zenith;
+        mBRDFThetaTableH[0][kHalfTableSize -1 - i] = hk.mAlbedo.y * zenith;  // see mirror comment above
     }
 
     // Calculate FH as we get slightly better results convolving the full term
@@ -1530,38 +1646,35 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& 
         mBRDFThetaTableFH[0][i] = mBRDFThetaTableH[0][i] * thetaTable[i];
 
     float zhCoeffsH[7];
-    FindZH7FromThetaTable(kTableSize, mBRDFThetaTableH [0], zhCoeffsH);
-
     Vec3f zhCoeffsFH[7];
+
+    FindZH7FromThetaTable(kTableSize, mBRDFThetaTableH [0], zhCoeffsH);
     FindZH7FromThetaTable(kTableSize, mBRDFThetaTableFH[0], zhCoeffsFH);
 
-    // rows 1..n-1 are successive convolutions
+    ApplyZH7Windowing(kThetaWHosekH, zhCoeffsH);
+    ApplyZH7Windowing(kThetaWHosekH, zhCoeffsFH);
+
+    // Rows 1..n-1 are successive convolutions
 
     for (int r = 1; r < kBRDFSamples; r++)
     {
-        int rs = kBRDFSamples - r - 1;
-        float s = kRowPowers[rs];
+        Vec3f zhCoeffsThetaConv  [7];
+        Vec3f zhCoeffsGammaConv  [7];
+        float zhCoeffsThetaConvH [7];
+        Vec3f zhCoeffsThetaConvFH[7];
+
+        // Scale up to full windowing at full spec power...
+        float rw = sqrtf(1.0f - r / (kBRDFSamples - 1));
+
+        float s = kRowPowers[r];
 
         float csCoeffs[7];
         CalcCosPowerSatZH7(s, csCoeffs);
 
-        Vec3f zhCoeffsThetaConv[7];
         ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsTheta, zhCoeffsThetaConv);
-        Vec3f zhCoeffsGammaConv[7];
         ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsGamma, zhCoeffsGammaConv);
-
-        float zhCoeffsThetaConvH [7];
-        ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsH , zhCoeffsThetaConvH);
-        Vec3f zhCoeffsThetaConvFH[7];
-        ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsFH, zhCoeffsThetaConvFH);
-
-        // Scale up to full windowing at full spec power...
-        float rw = sqrtf(rs / float(kBRDFSamples - 2));
-
-        ApplyZH7Windowing(kThetaWHosek * rw, zhCoeffsThetaConv);
-        ApplyZH7Windowing(kGammaWHosek * rw, zhCoeffsGammaConv);
-        ApplyZH7Windowing(kThetaWHosek * rw, zhCoeffsThetaConvH);
-        ApplyZH7Windowing(kThetaWHosek * rw, zhCoeffsThetaConvFH);
+        ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsH    , zhCoeffsThetaConvH);
+        ConvolveZH7WithZH7Norm(csCoeffs, zhCoeffsFH   , zhCoeffsThetaConvFH);
 
         // Generate convolved tables from ZH
         GenerateThetaTableFromZH7(zhCoeffsThetaConv,   kTableSize, mBRDFThetaTable  [r]);
@@ -1578,7 +1691,6 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& 
             // in sunset situatons. Trying to solve this completely via windowing
             // leads to excessive blurring, so we also compensate by scaling down
             // the far pole in this situation.
-            // TODO: investigate further, not sure this is worth it.
             float g = i / float(kTableSize - 1);
             float cosGamma = UnmapGamma(g);
             if (cosGamma < -0.6f)
@@ -1604,18 +1716,18 @@ void cSunSkyBRDF::FindBRDFTables(const cSunSkyTable& table, const cSunSkyHosek& 
 #endif
 }
 
-Vec3f cSunSkyBRDF::ConvolvedSkyRGB(const cSunSkyPreetham& pt, const Vec3f& v, float r) const
+Vec3f SkyBRDF::ConvolvedSkyRGB(const SkyPreetham& pt, const Vec3f& v, float r) const
 {
-    CL_ASSERT(!mXYZ);
+    VL_ASSERT(!mXYZ);
 
     float cosTheta = v.z;
     float cosGamma = dot(pt.mToSun, v);
 
-    float t = 0.5f * (cosTheta + 1);
+    float t = 0.5f * (MapTheta(cosTheta) + 1);
     float g = MapGamma(cosGamma);
 
-    Vec3f F = BiLerp(t, r, kTableSize, kBRDFSamples, mBRDFThetaTable[0]);
-    Vec3f G = BiLerp(g, r, kTableSize, kBRDFSamples, mBRDFGammaTable[0]);
+    Vec3f F = BiLerpSample(t, r, kTableSize, kBRDFSamples, mBRDFThetaTable[0]);
+    Vec3f G = BiLerpSample(g, r, kTableSize, kBRDFSamples, mBRDFGammaTable[0]);
 
 #ifdef SIM_CLAMP
     F.z *= mMaxTheta;
@@ -1630,23 +1742,27 @@ Vec3f cSunSkyBRDF::ConvolvedSkyRGB(const cSunSkyPreetham& pt, const Vec3f& v, fl
     return xyYToRGB(xyY);
 }
 
-Vec3f cSunSkyBRDF::ConvolvedSkyRGB(const cSunSkyHosek& hk, const Vec3f& v, float r) const
+Vec3f SkyBRDF::ConvolvedSkyRGB(const SkyHosek& hk, const Vec3f& v, float r) const
 {
-    CL_ASSERT(mXYZ);
+    VL_ASSERT(mXYZ);
 
     float cosTheta = v.z;
     float cosGamma = dot(hk.mToSun, v);
 
-    float t = 0.5f * (cosTheta + 1);
-    float g = MapGamma(cosGamma);
+    float t = 0.5f * (MapTheta(cosTheta) + 1);
+    float g = MapGamma(ClampUnit(cosGamma));
 
-    Vec3f F = BiLerp(t, r, kTableSize, kBRDFSamples, mBRDFThetaTable[0]);
-    Vec3f G = BiLerp(g, r, kTableSize, kBRDFSamples, mBRDFGammaTable[0]);
+    Vec3f F = BiLerpSample(t, r, kTableSize, kBRDFSamples, mBRDFThetaTable[0]);
+    Vec3f G = BiLerpSample(g, r, kTableSize, kBRDFSamples, mBRDFGammaTable[0]);
 
 #ifdef SIM_CLAMP
     F *= mMaxTheta;
     G *= mMaxGamma;
 #endif
+
+    Vec3f cH(hk.mCoeffsXYZ[0][7], hk.mCoeffsXYZ[1][7], hk.mCoeffsXYZ[2][7]);
+    Vec3f cI(hk.mCoeffsXYZ[0][2], hk.mCoeffsXYZ[1][2], hk.mCoeffsXYZ[2][2]);
+    cI -= vl_1;
 
 #ifdef HOSEK_BRDF_ANALYTIC_H
     // Evaluate H term on the fly, for cross-checking.
@@ -1657,26 +1773,19 @@ Vec3f cSunSkyBRDF::ConvolvedSkyRGB(const cSunSkyHosek& hk, const Vec3f& v, float
     CalcCosPowerSatZH7(0.5f, zhZ);
 
     float zhR[7];
-    CalcCosPowerSatZH7(1.0f / (r + 0.001f), zhR);
+    float n = LerpSample(r, kBRDFSamples, kRowPowers);
+    CalcCosPowerSatZH7(n, zhR);
 
     float zhZR[7];
     ConvolveZH7WithZH7Norm(zhR, zhZ, zhZR);
 
-    float zenith = EvalZH7(cosTheta, zhZR);
+    float zenith = SampleZH7(cosTheta, zhZR);
 
-    Vec3f H
-    (
-        hk.mCoeffsXYZ[0][7] * zenith + (hk.mCoeffsXYZ[0][2] - 1.0f),
-        hk.mCoeffsXYZ[1][7] * zenith + (hk.mCoeffsXYZ[1][2] - 1.0f),
-        hk.mCoeffsXYZ[2][7] * zenith + (hk.mCoeffsXYZ[2][2] - 1.0f)
-    );
+    Vec3f H = zenith * cH + cI;
     Vec3f FH = F * H;
 #else
-    Vec3f cH(hk.mCoeffsXYZ[0][7], hk.mCoeffsXYZ[1][7], hk.mCoeffsXYZ[2][7]);
-    Vec3f cI(hk.mCoeffsXYZ[0][2] - 1.0f, hk.mCoeffsXYZ[1][2] - 1.0f, hk.mCoeffsXYZ[2][2] - 1.0f);
-
-    Vec3f H  = BiLerp(t, r, kTableSize, kBRDFSamples, mBRDFThetaTableH [0]) * cH;
-    Vec3f FH = BiLerp(t, r, kTableSize, kBRDFSamples, mBRDFThetaTableFH[0]) * cH;
+    Vec3f H  = BiLerpSample(t, r, kTableSize, kBRDFSamples, mBRDFThetaTableH [0]) * cH;
+    Vec3f FH = BiLerpSample(t, r, kTableSize, kBRDFSamples, mBRDFThetaTableFH[0]) * cH;
 
 #ifdef SIM_CLAMP
     FH *= mMaxTheta;
@@ -1689,18 +1798,17 @@ Vec3f cSunSkyBRDF::ConvolvedSkyRGB(const cSunSkyHosek& hk, const Vec3f& v, float
     // (1 - F(theta)) * (1 + G(phi) + H(theta))
     Vec3f XYZ = (Vec3f(vl_1) - F) * (Vec3f(vl_1) + G) + H - FH;
 
-    XYZ = ClampPositive(XYZ);
+    XYZ = ClampPositive3(XYZ);
     XYZ *= hk.mRadXYZ;
 
     return XYZToRGB(XYZ);
 }
 
-void cSunSkyBRDF::FillBRDFTexture(int width, int height, uint8_t image[][4]) const
+void SkyBRDF::FillBRDFTexture(int width, int height, uint8_t image[][4]) const
 {
-    CL_ASSERT(width == kTableSize);
-    CL_ASSERT((height == 2 * kBRDFSamples) || (mHasHTerm && height == 4 * kBRDFSamples));
+    VL_ASSERT(width == kTableSize);
+    VL_ASSERT((height == 2 * kBRDFSamples) || (mHasHTerm && height == 4 * kBRDFSamples));
 
-    (void) width;
     (void) height;
 
     for (int j = 0; j < kBRDFSamples; j++)
@@ -1768,12 +1876,11 @@ void cSunSkyBRDF::FillBRDFTexture(int width, int height, uint8_t image[][4]) con
     }
 }
 
-void cSunSkyBRDF::FillBRDFTexture(int width, int height, float image[][4]) const
+void SkyBRDF::FillBRDFTexture(int width, int height, float image[][4]) const
 {
-    CL_ASSERT(width == kTableSize);
-    CL_ASSERT(height == 2 * kBRDFSamples);
+    VL_ASSERT(width == kTableSize);
+    VL_ASSERT(height == 2 * kBRDFSamples || height == 4 * kBRDFSamples);
 
-    (void) width;
     (void) height;
 
     for (int j = 0; j < kBRDFSamples; j++)
@@ -1806,10 +1913,10 @@ void cSunSkyBRDF::FillBRDFTexture(int width, int height, float image[][4]) const
 
 
 //------------------------------------------------------------------------------
-// cSunSky -- composite class for easier comparison
+// SunSky -- composite class for easier comparison
 //------------------------------------------------------------------------------
 
-cSunSky::cSunSky() :
+SunSky::SunSky() :
     mSkyType(kPreetham),
     mToSun(vl_0),
     mTurbidity(2.5f),
@@ -1820,60 +1927,64 @@ cSunSky::cSunSky() :
 {
 }
 
-void cSunSky::SetSkyType(tSkyType skyType)
+void SunSky::SetSkyType(tSkyType skyType)
 {
     mSkyType = skyType;
 }
 
-tSkyType cSunSky::SkyType() const
+tSkyType SunSky::SkyType() const
 {
     return mSkyType;
 }
 
-void cSunSky::SetSunDir(const Vec3f& v)
+void SunSky::SetSunDir(const Vec3f& v)
 {
     mToSun = v;
 }
 
-void cSunSky::SetTurbidity(float turbidity)
+void SunSky::SetTurbidity(float turbidity)
 {
     mTurbidity = turbidity;
 }
 
-void cSunSky::SetAlbedo(Vec3f rgb)
+void SunSky::SetAlbedo(Vec3f rgb)
 {
     mAlbedo = rgb;
 }
 
-void cSunSky::SetOvercast(float overcast)
+void SunSky::SetOvercast(float overcast)
 {
     mOvercast = overcast;
 }
 
-void cSunSky::SetRoughness(float roughness)
+void SunSky::SetRoughness(float roughness)
 {
     mRoughness = roughness;
 }
 
-void cSunSky::Update()
+void SunSky::Update()
 {
     mZenithY = ZenithLuminance(acosf(mToSun.z), mTurbidity);
-    
-    mPreetham.Update(mToSun, mTurbidity, mOvercast);
-    mHosek   .Update(mToSun, mTurbidity, mAlbedo, mOvercast);
 
-    if (mSkyType == kPreethamTable || mSkyType == kPreethamBRDF)
+    mPreetham.Update(mToSun, mTurbidity, mOvercast);
+
+    mHosek.mUseCubic = (kHosekCubic <= mSkyType && mSkyType <= kHosekCubicBRDF);
+    mHosek.Update(mToSun, mTurbidity, mAlbedo, mOvercast);
+
+    if (kPreethamTable <= mSkyType && mSkyType <= kPreethamBRDF)
         mTable.FindThetaGammaTables(mPreetham);
-    else if (mSkyType == kHosekTable || mSkyType == kHosekBRDF)
+    else if (kHosekTable <= mSkyType && mSkyType <= kHosekBRDF)
+        mTable.FindThetaGammaTables(mHosek);
+    else if (kHosekCubicTable <= mSkyType && mSkyType <= kHosekCubicBRDF)
         mTable.FindThetaGammaTables(mHosek);
 
     if (mSkyType == kPreethamBRDF)
         mBRDF.FindBRDFTables(mTable, mPreetham);
-    if (mSkyType == kHosekBRDF)
+    if (mSkyType == kHosekBRDF || mSkyType == kHosekCubicBRDF)
         mBRDF.FindBRDFTables(mTable, mHosek);
 }
 
-Vec3f cSunSky::SkyRGB(const Vec3f& v) const
+Vec3f SunSky::SkyRGB(const Vec3f& v) const
 {
     switch (mSkyType)
     {
@@ -1886,10 +1997,13 @@ Vec3f cSunSky::SkyRGB(const Vec3f& v) const
         return mBRDF.ConvolvedSkyRGB(mPreetham, v, mRoughness);
 
     case kHosek:
+    case kHosekCubic:
         return mHosek.SkyRGB(v);
     case kHosekTable:
+    case kHosekCubicTable:
         return mTable.SkyRGB(mHosek, v);
     case kHosekBRDF:
+    case kHosekCubicBRDF:
         return mBRDF.ConvolvedSkyRGB(mHosek, v, mRoughness);
 
     case kCIEClear:
@@ -1904,7 +2018,7 @@ Vec3f cSunSky::SkyRGB(const Vec3f& v) const
     }
 }
 
-float cSunSky::SkyLuminance(const Vec3f& v) const
+float SunSky::SkyLuminance(const Vec3f& v) const
 {
     if (v.z < 0.0)
         return 0.0;
@@ -1920,13 +2034,14 @@ float cSunSky::SkyLuminance(const Vec3f& v) const
     case kCIEPartlyCloudy:
         return CIEPartlyCloudySkyLuminance(v, mToSun, mZenithY);
     case kHosek:
+    case kHosekCubic:
         return mHosek.SkyLuminance(v);
     default:
         return 0;
     }
 }
 
-Vec2f cSunSky::SkyChroma(const Vec3f& v) const
+Vec2f SunSky::SkyChroma(const Vec3f& v) const
 {
     if (v.z < 0.0)
         return Vec2f(0, 0);
@@ -1942,6 +2057,7 @@ Vec2f cSunSky::SkyChroma(const Vec3f& v) const
     case kCIEPartlyCloudy:
         return kPartlyCloudyChroma;
     case kHosek:
+    case kHosekCubic:
         {
             Vec3f xyz = mHosek.SkyXYZ(v);
             return Vec2f(xyz.x / xyz.z, xyz.y / xyz.z);
@@ -1951,7 +2067,7 @@ Vec2f cSunSky::SkyChroma(const Vec3f& v) const
     }
 }
 
-float cSunSky::AverageLuminance() const
+float SunSky::AverageLuminance() const
 {
     switch (mSkyType)
     {
@@ -1970,10 +2086,12 @@ float cSunSky::AverageLuminance() const
     case kHosek:
     case kHosekTable:
     case kHosekBRDF:
+    case kHosekCubic:
+    case kHosekCubicTable:
+    case kHosekCubicBRDF:
         return mHosek.mRadXYZ.y;
 
     default:
         return 1.0f;
     }
 }
-

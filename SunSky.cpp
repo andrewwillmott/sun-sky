@@ -17,6 +17,11 @@
 #include <stdint.h>
 #include <float.h>
 
+#ifdef _MSC_VER
+    // double->float
+    #pragma warning(disable : 4305)
+#endif
+
 using namespace SSLib;
 
 // #define SIM_CLAMP                // emulate normalised integer texture, for CPU-side checking
@@ -1664,7 +1669,7 @@ void SkyBRDF::FindBRDFTables(const SkyTable& table, const SkyHosek& hk)
         Vec3f zhCoeffsThetaConvFH[7];
 
         // Scale up to full windowing at full spec power...
-        float rw = sqrtf(1.0f - r / (kBRDFSamples - 1));
+        float rw = sqrtf(1.0f - r / (kBRDFSamples - 1.0f));
 
         float s = kRowPowers[r];
 

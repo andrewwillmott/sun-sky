@@ -845,7 +845,7 @@ int main(int argc, const char* argv[])
 
     if (!movie && autoscale)
     {
-        float avgLum = sunSky.AverageLuminance();
+        float avgLum = sunSky.SkyAverageLuminance();
 
         if (verbose)
             printf("Average luminance: %g\n", avgLum);
@@ -941,7 +941,7 @@ int main(int argc, const char* argv[])
 
             if (autoscale)
             {
-                float avgLum = sunSky.AverageLuminance();
+                float avgLum = sunSky.SkyAverageLuminance();
 
                 if (verbose)
                     printf("Average luminance: %g\n", avgLum);

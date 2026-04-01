@@ -1,8 +1,8 @@
 //
-//  SunSky.hpp
+// SunSky.hpp
 //
-//  Implements various sky models -- Preetham, Hosek, CIE* -- as
-//  well as a separable table-based model for fast BRDF convolutions
+// Implements various sky models -- Preetham, Hosek, CIE* -- as
+// well as a separable table-based model for fast BRDF convolutions
 //
 // Andrew Willmott but:
 //   Preetham sun/sky based on code by Brian Smits,
@@ -35,7 +35,10 @@ namespace SSLib
     // Returns sunrise and sunset times for the given day and location.
 
     // Utilities
-    Vec3f SunRGB(float cosTheta, float turbidity = 3.0f);   // Returns RGB for given sun elevation
+    Vec3f SunRGB      (float cosTheta, float turbidity = 3.0f);  // Returns RGB for given sun elevation
+    Vec2f SunChroma   (float cosTheta, float turbidity = 3.0f);  // Returns XYZ chroma for given sun elevation
+    float SunLuminance(float cosTheta, float turbidity = 3.0f);  // Returns XYZ luminance for given sun elevation
+
     float ZenithLuminance(float thetaS, float T);           // Returns luminance estimate for given solar altitude and turbidity
 
     float CIEOvercastSkyLuminance    (const Vec3f& v, float Lz);                        // CIE standard overcast sky
@@ -55,9 +58,9 @@ namespace SSLib
 
         void        Update(const Vec3f& sun, float turbidity, float overcast = 0.0f, float hCrush = 0.0f); // update model with given settings
 
-        Vec3f       SkyRGB      (const Vec3f &v) const;     // Returns luminance/chroma converted to RGB
-        float       SkyLuminance(const Vec3f &v) const;     // Returns the luminance of the sky in direction v. v must be normalized. Luminance is in Nits = cd/m^2 = lumens/sr/m^2 */
-        Vec2f       SkyChroma   (const Vec3f &v) const;     // Returns the chroma of the sky in direction v. v must be normalized.
+        Vec3f       SkyRGB      (const Vec3f& v) const;     // Returns luminance/chroma converted to RGB
+        float       SkyLuminance(const Vec3f& v) const;     // Returns the luminance of the sky in direction v. v must be normalized. Luminance is in Nits = cd/m^2 = lumens/sr/m^2 */
+        Vec2f       SkyChroma   (const Vec3f& v) const;     // Returns the chroma of the sky in direction v. v must be normalized.
 
         // Data
         Vec3f       mToSun;
@@ -82,9 +85,9 @@ namespace SSLib
 
         void        Update(const Vec3f& sun, float turbidity, Vec3f albedo = vl_0, float overcast = 0.0f); // update model with given settings
 
-        Vec3f       SkyXYZ      (const Vec3f &v) const;     // Returns CIE XYZ
-        Vec3f       SkyRGB      (const Vec3f &v) const;     // Returns luminance/chroma converted to RGB
-        float       SkyLuminance(const Vec3f &v) const;     // Returns CIE XYZ
+        Vec3f       SkyXYZ      (const Vec3f& v) const;     // Returns CIE XYZ
+        Vec3f       SkyRGB      (const Vec3f& v) const;     // Returns luminance/chroma converted to RGB
+        float       SkyLuminance(const Vec3f& v) const;     // Returns CIE luminance
 
         // Data
         Vec3f       mToSun;
@@ -207,17 +210,22 @@ namespace SSLib
 
         void        SetSunDir   (const Vec3f& sun);
         void        SetTurbidity(float turbidity);
-        void        SetAlbedo   (Vec3f rgb);  // Set ground-bounce factor
+        void        SetAlbedo   (Vec3f rgb);        // Set ground-bounce factor
         void        SetOvercast (float overcast);   // 0 = clear, 1 = completely overcast
         void        SetRoughness(float roughness);  // Set roughness for BRDF tables
 
         void        Update();                       // update model given above settings
 
-        float       SkyLuminance(const Vec3f &v) const;     // Returns the luminance of the sky in direction v. v must be normalized. Luminance is in Nits = cd/m^2 = lumens/sr/m^2 */
-        Vec2f       SkyChroma   (const Vec3f &v) const;     // Returns the chroma of the sky in direction v. v must be normalized.
-        Vec3f       SkyRGB      (const Vec3f &v) const;     // Returns luminance/chroma converted to RGB
+        Vec3f       SkyRGB      (const Vec3f& v) const;  // Returns sky luminance/chroma converted to RGB
+        float       SkyLuminance(const Vec3f& v) const;  // Returns the luminance of the sky in direction v. v must be normalized. Luminance is in Nits = cd/m^2 = lumens/sr/m^2 */
+        Vec2f       SkyChroma   (const Vec3f& v) const;  // Returns the chroma of the sky in direction v. v must be normalized.
+        float       SkyAverageLuminance() const;         // Average over sky
 
-        float       AverageLuminance() const;
+        Vec3f       SunRGB      () const;  // Returns direct sun RGB
+        float       SunLuminance() const;  // Returns direct sun's luminance
+        Vec2f       SunChroma   () const;  // Returns direct sun's chroma
+
+        Vec3f       SunSkyRGB(const Vec3f& v, float overcast = 0.0f) const;  // Returns combined sun + sky RGB. But generally you're better off treating these as separate light sources.
 
     protected:
         // Data

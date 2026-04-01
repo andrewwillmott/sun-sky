@@ -1,7 +1,7 @@
 //
 // VL234f.hpp
 //
-// Copyright Andrew Willmott
+// Andrew Willmott
 //
 
 #ifndef VL234f_H
@@ -54,6 +54,12 @@
     #define VL_DELETE delete
 #endif
 
+// Misc
+
+#ifndef VL_CXX_11
+    #define VL_CXX_11 __cplusplus >= 201103L
+#endif
+
 #ifndef VL_CONSTANTS_H
 #define VL_CONSTANTS_H
 
@@ -82,6 +88,9 @@ const double vl_twoPi        = vl_pi * 2.0;
 
 const double vl_huge = vld_huge;
 
+const float  vlf_eps = 1.19209290E-07F;
+const double vld_eps = 2.2204460492503131e-016;
+
 struct VLVecType { typedef void IsVec; typedef float Elt; };
 struct VLMatType { typedef void IsMat; typedef float Elt; };
 struct VLVolType { typedef void IsVol; typedef float Elt; };
@@ -104,16 +113,16 @@ const float VL_CS(twoPi)     = float(VL_CS(pi) * 2);
 
 
 
-using ::abs;
-using ::sqrt;
+using std::abs;
+using std::sqrt;
 
 // --- Inlines ----------------------------------------------------------------
 
 // additions to arithmetic functions
 
-inline float  len   (float  x) { return std::abs(x); }
-inline double len   (double x) { return std::abs(x); }
-inline int    len   (int    x) { return std::abs(x); }
+inline float  len   (float  x) { return abs(x); }
+inline double len   (double x) { return abs(x); }
+inline int    len   (int    x) { return abs(x); }
 
 inline float  sqrlen(float  x) { return x * x; }
 inline double sqrlen(double x) { return x * x; }
@@ -200,8 +209,8 @@ template<class T> inline T vl_clamp_upper(T x, T max)
 
 #endif
 
-#ifndef VL_VEC2_H
-#define VL_VEC2_H
+#ifndef VLF_VEC2_H
+#define VLF_VEC2_H
 
 
 // --- Vec2 Class -------------------------------------------------------------
@@ -637,8 +646,8 @@ inline bool Vec2f::operator >= (const Vec2f& a) const
 
 #endif
 
-#ifndef VL_VEC3_H
-#define VL_VEC3_H
+#ifndef VLF_VEC3_H
+#define VLF_VEC3_H
 
 
 // --- Vec3 Class -------------------------------------------------------------
@@ -1135,8 +1144,8 @@ inline Vec3f abs(const Vec3f& v)
 
 #endif
 
-#ifndef VL_VEC4_H
-#define VL_VEC4_H
+#ifndef VLF_VEC4_H
+#define VLF_VEC4_H
 
 
 // --- Vec4 Class -------------------------------------------------------------
@@ -1596,8 +1605,8 @@ inline Vec4f abs(const Vec4f& v)
 
 #endif
 
-#ifndef VL_MAT2_H
-#define VL_MAT2_H
+#ifndef VLF_MAT2_H
+#define VLF_MAT2_H
 
 
 
@@ -1689,7 +1698,9 @@ Mat2f  trans(const Mat2f& m);                  // Transpose
 float   trace(const Mat2f& m);                  // Trace
 Mat2f  adj  (const Mat2f& m);                  // Adjoint
 float   det  (const Mat2f& m);                  // Determinant
+#ifndef VL_NO_REAL
 Mat2f  inv  (const Mat2f& m);                  // Inverse
+#endif
 Mat2f  abs  (const Mat2f& m);                  // abs(m_ij)
 Mat2f  oprod(const Vec2f& a, const Vec2f& b);  // Outer product
 
@@ -2039,8 +2050,8 @@ inline Mat2f adj(const Mat2f& m)
 
 #endif
 
-#ifndef VL_MAT3_H
-#define VL_MAT3_H
+#ifndef VLF_MAT3_H
+#define VLF_MAT3_H
 
 
 
@@ -2141,7 +2152,9 @@ Mat3f  trans(const Mat3f& m);                  // Transpose
 float   trace(const Mat3f& m);                  // Trace
 Mat3f  adj  (const Mat3f& m);                  // Adjoint
 float   det  (const Mat3f& m);                  // Determinant
+#ifndef VL_NO_REAL
 Mat3f  inv  (const Mat3f& m);                  // Inverse
+#endif
 Mat3f  abs  (const Mat3f& m);                  // abs(m_ij)
 Mat3f  oprod(const Vec3f& a, const Vec3f& b);  // Outer product
 
@@ -2374,8 +2387,8 @@ inline Vec3f col(const Mat3f& m, int j)
 #endif
 
 
-#ifndef VL_MAT4_H
-#define VL_MAT4_H
+#ifndef VLF_MAT4_H
+#define VLF_MAT4_H
 
 
 
@@ -2478,7 +2491,9 @@ Mat4f  trans(const Mat4f& m);                  // Transpose
 float   trace(const Mat4f& m);                  // Trace
 Mat4f  adj  (const Mat4f& m);                  // Adjoint
 float   det  (const Mat4f& m);                  // Determinant
+#ifndef VL_NO_REAL
 Mat4f  inv  (const Mat4f& m);                  // Inverse
+#endif
 Mat4f  abs  (const Mat4f& m);                  // abs(m_ij)
 Mat4f  oprod(const Vec4f& a, const Vec4f& b);  // Outer product
 
@@ -2625,129 +2640,6 @@ inline Vec4f col(const Mat4f& m, int j)
 
 #endif
 
-#ifndef VL_QUAT_H
-#define VL_QUAT_H
-
-
-// --- Quat Class -------------------------------------------------------------
-
-
-typedef Vec4f Quatf;
-
-// Quat construction
-Quatf MakeQuat(const Vec3f& a, const Vec3f& b);  // Returns a quaternion representing the rotation from a to b
-Quatf MakeQuat(const Vec3f& axis, float theta);   // Returns a quaternion rotation about 'axis' by 'theta'
-
-Quatf MakeQuatX(float theta);                      // Returns a rotation about the x axis by theta (in radians)
-Quatf MakeQuatY(float theta);                      // Returns a rotation about the y axis by theta (in radians)
-Quatf MakeQuatZ(float theta);                      // Returns a rotation about the z axis by theta (in radians)
-
-Quatf MakeQuat(const Vec3f& point);               // Makes a quaternion from a point (e.g., for use in rotation)
-Quatf MakeQuat(float s);                           // Makes a quaternion from a scalar
-
-Quatf MakeQuatFromCRot(const Mat3f& rot3);        // Make quaternion from column-based rotation matrix.
-Quatf MakeQuatFromRRot(const Mat3f& rot3);        // Make quaternion from row-based rotation matrix.
-
-Mat3f CRotFromQuat(const Quatf& q);               // Return the equivalent column-based rotation matrix for q
-Mat3f RRotFromQuat(const Quatf& q);               // Return the equivalent row-based rotation matrix for q
-
-Vec4f AxisAngleFromQuat(const Quatf& q);          // Returns [axis, angle] representation of quaternion
-
-// Quat ops
-Vec3f QuatApply(const Quatf& q, const Vec3f& p);  // Transform point p by quaternion q
-Quatf QuatMult (const Quatf& a, const Quatf& b);  // Concatenate quaternions, the result represents applying qb then qa.
-Quatf QuatConj (const Quatf& q);                  // Quaternion conjugate. if len(q) = 1, this is also the inverse.
-Quatf QuatInv  (const Quatf& q);                  // Quaternion inverse.
-
-Quatf NLerp(const Quatf& q1, const Quatf& q2, float s);   // Return linear + renormalise interpolation between q1 and q2. Fast, accurate for smaller angles
-Quatf SLerp(const Quatf& q1, const Quatf& q2, float s);   // Return spherical interpolation between q1 and q2
-
-Quatf FastRenormalize(const Quatf& q);                    // Renormalizes a mostly-already-normalized quaternion.
-void  ConstrainNeighbourhood(const Quatf& q1, Quatf* q2); // Adjust q2 so lerp between q1 & q2 takes shortest path.
-
-float CosAngleBetween(Quatf q0, Quatf q1);          // Returns cosine of the angle between q0 . a vs q1 . a
-
-void DecomposeTwist(const Quatf& q, const Vec3f& axis, Quatf* twist, Quatf* noTwist);
-// Decomposes q into a 'twist' rotation around 'axis', and a residual 'noTwist' rotation.
-
-Quatf ClosestAxialRotTo(VLAxis a, const Quatf& q); // Find closest rotation around axis 'a' to q
-Quatf ClosestRotXYTo(const Quatf& q);              // Find closest rotation around x and y to q.
-
-
-// --- Inlines ----------------------------------------------------------------
-
-inline Quatf MakeQuatX(float theta)
-{
-    theta *= float(0.5);
-    float s, c; vl_sincos(theta, &s, &c);
-    return Quatf(s, float(0), float(0), c);
-}
-
-inline Quatf MakeQuatY(float theta)
-{
-    theta *= float(0.5);
-    float s, c; vl_sincos(theta, &s, &c);
-    return Quatf(float(0), s, float(0), c);
-}
-
-inline Quatf MakeQuatZ(float theta)
-{
-    theta *= float(0.5);
-    float s, c; vl_sincos(theta, &s, &c);
-    return Quatf(float(0), float(0), s, c);
-}
-
-inline Quatf MakeQuat(const Vec3f& point)
-{
-    return Quatf(point, float(1));
-}
-
-inline Quatf MakeQuat(float s)
-{
-    return Quatf(float(0), float(0), float(0), s);
-}
-
-inline Vec3f QuatApply(const Quatf& q, const Vec3f& p)
-{
-    // total = 18*, 12+
-    Vec3f b0 = cross(q.AsVec3(), p);
-    Vec3f b1 = cross(q.AsVec3(), b0);
-    return p + 2 * (b0 * q.w + b1);
-}
-
-inline Quatf QuatConj(const Quatf& q)
-{
-    return Quatf(-q[0], -q[1], -q[2], q[3]);
-}
-
-inline Quatf QuatInv(const Quatf& q)
-{
-    return QuatConj(q) / sqrlen(q);
-}
-
-inline Quatf NLerp(const Quatf& q1, const Quatf& q2, float s)
-{
-    return FastRenormalize(lerp(q1, q2, s));
-}
-
-inline void ConstrainNeighbourhood(const Quatf& q1, Quatf* q2)
-{
-    if (dot(q1, *q2) < 0)
-        *q2 = -*q2;
-}
-
-inline Quatf FastRenormalize(const Quatf& q)
-{
-    float approxOneOverLen = (float(3) - sqrlen(q)) * float(0.5);
-    return q * approxOneOverLen;
-}
-
-inline float CosAngleBetween(Quatf q0, Quatf q1)
-{
-    return dot(q0, q1);
-}
-
-#endif
 
 #ifndef VL_TRANSFORM_H
 #define VL_TRANSFORM_H
@@ -2807,14 +2699,14 @@ inline Mat2f xform(const Mat2f& m, const Mat2f& n)
 { return n * m; }
 
 inline Vec2f xform(const Mat3f& m, const Vec2f& v)
-{ return proj(Vec3f(v, 1.0) * m); }
+{ return proj(Vec3f(v, float(1)) * m); }
 inline Vec3f xform(const Mat3f& m, const Vec3f& v)
 { return v * m; }
 inline Mat3f xform(const Mat3f& m, const Mat3f& n)
 { return n * m; }
 
 inline Vec3f xform(const Mat4f& m, const Vec3f& v)
-{ return proj(Vec4f(v, 1.0) * m); }
+{ return proj(Vec4f(v, float(1)) * m); }
 inline Vec4f xform(const Mat4f& m, const Vec4f& v)
 { return v * m; }
 inline Mat4f xform(const Mat4f& m, const Mat4f& n)
@@ -2841,14 +2733,14 @@ inline Mat2f xform(const Mat2f& m, const Mat2f& n)
 { return m * n; }
 
 inline Vec2f xform(const Mat3f& m, const Vec2f& v)
-{ return proj(m * Vec3f(v, 1.0)); }
+{ return proj(m * Vec3f(v, float(1))); }
 inline Vec3f xform(const Mat3f& m, const Vec3f& v)
 { return m * v; }
 inline Mat3f xform(const Mat3f& m, const Mat3f& n)
 { return m * n; }
 
 inline Vec3f xform(const Mat4f& m, const Vec3f& v)
-{ return proj(m * Vec4f(v, 1.0)); }
+{ return proj(m * Vec4f(v, float(1))); }
 inline Vec4f xform(const Mat4f& m, const Vec4f& v)
 { return m * v; }
 inline Mat4f xform(const Mat4f& m, const Mat4f& n)
@@ -2856,36 +2748,14 @@ inline Mat4f xform(const Mat4f& m, const Mat4f& n)
 #endif
 
 
-// --- Inlines ----------------------------------------------------------------
-
-inline Mat3f CRot3f(const Quatf& q)
-{
-    return CRotFromQuat(q);
-}
-
-inline Mat3f RRot3f(const Quatf& q)
-{
-    return RRotFromQuat(q);
-}
-
-inline Mat4f HCRot4f(const Quatf& q)
-{
-    return Mat4f(CRotFromQuat(q));
-}
-
-inline Mat4f HRRot4f(const Quatf& q)
-{
-    return Mat4f(RRotFromQuat(q));
-}
-
 #endif
 
 #include <iostream>
 
 #ifndef VL_NO_IOSTREAM
 
-#ifndef VL_STREAM_234_H
-#define VL_STREAM_234_H
+#ifndef VLF_STREAM_234_H
+#define VLF_STREAM_234_H
 
 
 
